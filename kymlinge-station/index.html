@@ -1261,17 +1261,6 @@ Look at it to freeze it. Back away to win some distance.</p>
       breathe(0.05 + 0.1 * fear + 0.03 * moving, dur, 650 + 250 * fear, !inhale);
       inhale = !inhale; breathT = dur + 0.15 + (1 - fear) * 0.5;
     }
-    if (ent.visible && d < 6) {
-      entBreathT -= dt;
-      if (entBreathT <= 0) { breathe(0.06 * (1 - d / 6) + 0.02, 0.8, 380, true); entBreathT = 1.6 + Math.random() * 0.8; }
-    }
-  }
-  // The entity's own steps, heard from wherever it is: quieter and duller the farther it is.
-  function entityStepsTick() {
-    if (!ent.visible || state !== "play" || gmode !== "escape") { entLast = null; return; }
-    if (!entLast) { entLast = { x: ent.position.x, z: ent.position.z }; return; }
-    var m = Math.hypot(ent.position.x - entLast.x, ent.position.z - entLast.z);
-    if (m > 1.1) { entLast.x = ent.position.x; entLast.z = ent.position.z; var d = Math.hypot(ent.position.x - px, ent.position.z - pz); if (d < 16) footstep(1.5, d); }
   }
   // Far-off sounds that never explain themselves: slow dread between the close calls.
   function ambient() {
@@ -1491,7 +1480,7 @@ Look at it to freeze it. Back away to win some distance.</p>
     for (var pk = 0; pk < pool.length; pk++) if (poolTube[pk]) pool[pk].intensity = poolK[pk] * tubeFlick;
     if (entRig) animAura(entRig.aura, t, entRig.w);
     for (var hi = 0; hi < hunted.length; hi++) if (hunted[hi].rig) animAura(hunted[hi].rig.aura, t + hi * 3.7, 1);
-    animAxe(dt); animHunted(dt); scareTick(dt); entityStepsTick(); breathTick(dt);
+    animAxe(dt); animHunted(dt); scareTick(dt); breathTick(dt);
   }
   function draw() {
     var bob = (!RM && state === "play" && walkT > 0 && stepT > 0 && !held && forced <= 0 && (keys.KeyW || keys.KeyS || keys.ArrowUp || keys.ArrowDown || walkBtn)) ? Math.sin(walkT * 8) * 0.03 : 0;
