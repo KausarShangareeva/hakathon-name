@@ -210,7 +210,7 @@ Look at it to freeze it. Back away to win some distance.</p>
   el.gl.appendChild(renderer.domElement);
 
   var scene = new THREE.Scene();
-  scene.fog = new THREE.FogExp2(0x020302, 0.105);
+  scene.fog = new THREE.FogExp2(0x030504, 0.125);
   var camera = new THREE.PerspectiveCamera(72, 16 / 9, 0.1, 60);
   camera.rotation.order = "YXZ";
   scene.add(camera);
@@ -324,7 +324,9 @@ Look at it to freeze it. Back away to win some distance.</p>
   function graffitiTexture(txt, col) {
     return canvasTex(256, 96, function (c, w, h) {
       c.clearRect(0, 0, w, h);
-      c.font = "bold 46px 'Archivo Narrow', Impact, Arial"; c.textAlign = "center"; c.textBaseline = "middle";
+      var fs = 46; c.font = "bold " + fs + "px 'Archivo Narrow', Impact, Arial";
+      while (c.measureText(txt).width > w - 24 && fs > 18) { fs -= 2; c.font = "bold " + fs + "px 'Archivo Narrow', Impact, Arial"; }
+      c.textAlign = "center"; c.textBaseline = "middle";
       c.translate(w / 2, h / 2); c.rotate(-0.06);
       c.fillStyle = col; c.shadowColor = col; c.shadowBlur = 5;
       c.fillText(txt, 0, 0);
@@ -403,6 +405,18 @@ Look at it to freeze it. Back away to win some distance.</p>
     gr.addColorStop(0, "rgba(255,255,255,1)"); gr.addColorStop(0.3, "rgba(210,235,255,0.45)"); gr.addColorStop(1, "rgba(160,200,255,0)");
     g.fillStyle = gr; g.fillRect(0, 0, 64, 64);
     return new THREE.CanvasTexture(c);
+  }
+  // Mottled smoke puff: a few overlapping soft blobs, so no two clouds look like a clean glow.
+  var _fogTex = null;
+  function fogTex() {
+    if (_fogTex) return _fogTex;
+    var c = document.createElement("canvas"); c.width = c.height = 128; var g = c.getContext("2d");
+    for (var i = 0; i < 9; i++) {
+      var x = 30 + Math.random() * 68, y = 30 + Math.random() * 68, r = 28 + Math.random() * 30, gr = g.createRadialGradient(x, y, 0, x, y, r);
+      gr.addColorStop(0, "rgba(255,255,255,0.32)"); gr.addColorStop(1, "rgba(255,255,255,0)");
+      g.fillStyle = gr; g.fillRect(0, 0, 128, 128);
+    }
+    _fogTex = new THREE.CanvasTexture(c); return _fogTex;
   }
   var eyeHaloMat = new THREE.SpriteMaterial({ map: whiteGlowTex(), blending: THREE.AdditiveBlending, depthWrite: false, transparent: true, fog: false });
   var skinMat = inkMat, coatMat = inkMat, voidMat = inkDeepMat, glareMat = eyeWhiteMat;   // names used elsewhere
@@ -571,27 +585,19 @@ Look at it to freeze it. Back away to win some distance.</p>
   // Dark energy: a cold violet-teal rim glow behind the body plus wisps that rise and curl off it.
   var auraMat = null, wispMat = null;
   function buildAura() {
-    if (!auraMat) {
-      auraMat = new THREE.SpriteMaterial({ map: whiteGlowTex(), color: 0x2c2058, blending: THREE.AdditiveBlending, depthWrite: false, transparent: true, opacity: 0.45, fog: false });
-      wispMat = new THREE.SpriteMaterial({ map: whiteGlowTex(), color: 0x2a2446, blending: THREE.AdditiveBlending, depthWrite: false, transparent: true, opacity: 0.16, fog: false });
-    }
-    var g = new THREE.Group(), core = new THREE.Sprite(auraMat);
-    core.scale.set(3.2, 3.6, 1); core.position.set(0, 0.95, -0.08); g.add(core);
-    var wisps = [];
-    for (var i = 0; i < 16; i++) {
+    if (!wispMat) wispMat = new THREE.SpriteMaterial({ map: fogTex(), color: 0x7d8696, depthWrite: false, transparent: true, opacity: 0.2, fog: true });
+    var g = new THREE.Group(), wisps = [];
+    for (var i = 0; i < 22; i++) {
       var w = new THREE.Sprite(wispMat); g.add(w);
-      wisps.push({ s: w, ph: Math.random(), a: Math.random() * 6.28, r: 0.25 + Math.random() * 0.45, sp: 0.07 + Math.random() * 0.1, sz: 1.1 + Math.random() * 0.9 });
+      wisps.push({ s: w, ph: Math.random(), a: Math.random() * 6.28, r: 0.2 + Math.random() * 0.55, sp: 0.05 + Math.random() * 0.08, sz: 0.9 + Math.random() * 0.9 });
     }
-    return { g: g, core: core, wisps: wisps };
+    return { g: g, core: null, wisps: wisps };
   }
   function animAura(a, t, run) {
-    a.core.material.opacity = 0.45; 
-    var pulse = 1 + 0.12 * Math.sin(t * 3.1) + 0.06 * Math.sin(t * 7.3);
-    a.core.scale.set(3.2 * pulse, 3.6 * pulse, 1);
     for (var i = 0; i < a.wisps.length; i++) {
       var w = a.wisps[i], k = (w.ph + t * w.sp * (1 + run * 0.8)) % 1, ang = w.a + t * 0.9 + k * 4;
-      w.s.position.set(Math.cos(ang) * w.r * (1 - k * 0.4), 0.05 + k * 2.1, Math.sin(ang) * w.r * 0.7 * (1 - k * 0.4));
-      var sz = w.sz * (0.7 + k * 0.6); w.s.scale.set(sz, sz * 1.1, 1);
+      w.s.position.set(Math.cos(ang) * w.r, 0.1 + k * 1.7, Math.sin(ang) * w.r * 0.8);
+      var sz = w.sz * (0.75 + k * 0.5); w.s.scale.set(sz, sz, 1);
     }
   }
   function b64buf(str) {
@@ -714,7 +720,7 @@ Look at it to freeze it. Back away to win some distance.</p>
     if (levelGroup) disposeGroup(levelGroup);
     texKeep.forEach(function (t) { t.dispose(); }); texKeep = [];
     levelGroup = new THREE.Group(); scene.add(levelGroup);
-    lightSrc = [];
+    lightSrc = []; mist = [];
 
     // walls
     var wc = [];
@@ -805,6 +811,13 @@ Look at it to freeze it. Back away to win some distance.</p>
         pud.position.set(cx0 + (Math.random() - 0.5) * 1.2, 0.012, cz0 + (Math.random() - 0.5) * 1.2);
         levelGroup.add(pud);
       }
+      if (Math.random() < 0.4) {
+        var ms = new THREE.Sprite(mistMat); var msz = 3.2 + Math.random() * 2.4;
+        ms.scale.set(msz, msz * 0.55, 1);
+        ms.position.set(cx0 + (Math.random() - 0.5) * 2, 0.35 + Math.random() * 0.7, cz0 + (Math.random() - 0.5) * 2);
+        ms.userData = { bx: ms.position.x, bz: ms.position.z, ph: Math.random() * 6.28, sp: 0.08 + Math.random() * 0.12 };
+        levelGroup.add(ms); mist.push(ms);
+      }
       if (Math.random() < 0.3) {
         var tb = new THREE.Group(), lit = !hunt && Math.random() < 0.4;
         var hs = new THREE.Mesh(boxGeo, tubeBodyMat); hs.scale.set(1.3, 0.07, 0.16); tb.add(hs);
@@ -820,8 +833,8 @@ Look at it to freeze it. Back away to win some distance.</p>
     }
 
     // Red signal lamps on the walls, and graffiti.
-    var extras = 0, tr2 = 0, GR = ["SOV INTE", "DU ÄR INTE ENSAM", "KAMO", "KYMLINGE", "HÖGEN", "SILVERPILEN"], GC = ["#c8352c", "#d9d6cf", "#b8b13a"];
-    while (extras < 12 && tr2 < 300) {
+    var extras = 0, tr2 = 0, GR = ["GET OUT", "GÅ HÄRIFRÅN", "TURN BACK", "DON'T BLINK", "IT SEES YOU", "DON'T LOOK BACK", "LÄMNA STATIONEN", "RUN", "NO EXIT", "IT WATCHES", "SOV INTE", "DU ÄR INTE ENSAM", "KYMLINGE", "SILVERPILEN", "VÄND OM", "DON'T SLEEP"], GC = ["#c8352c", "#c8352c", "#d9d6cf", "#b8b13a"];
+    while (extras < 22 && tr2 < 500) {
       tr2++;
       var gx2 = 1 + Math.floor(Math.random() * (gw - 2)), gz2 = 1 + Math.floor(Math.random() * (gh - 2));
       if (grid[gz2][gx2] !== 1) continue;
@@ -860,6 +873,10 @@ Look at it to freeze it. Back away to win some distance.</p>
   }
 
   var poolK = [], poolTube = [];
+  var mist = [], mistMat = new THREE.SpriteMaterial({ map: fogTex(), color: 0x8a9a98, depthWrite: false, transparent: true, opacity: 0.2 });
+  function mistTick(tt) {
+    for (var i = 0; i < mist.length; i++) { var m = mist[i], u = m.userData; m.position.x = u.bx + Math.sin(tt * u.sp + u.ph) * 0.9; m.position.z = u.bz + Math.cos(tt * u.sp * 0.8 + u.ph) * 0.7; }
+  }
   function updateLights() {
     var arr = lightSrc.map(function (s) { var dx = s.x - px, dz = s.z - pz; return { s: s, d: dx * dx + dz * dz }; });
     arr.sort(function (a, b) { return a.d - b.d; });
@@ -870,7 +887,7 @@ Look at it to freeze it. Back away to win some distance.</p>
         pool[i].color.setHex(src.c || 0x2bff88); pool[i].distance = src.dist || 13;
         poolK[i] = src.k || 1.5; poolTube[i] = !!src.tube;
       } else { pool[i].position.set(0, -50, 0); poolK[i] = 0; }
-      pool[i].intensity = poolK[i] * (poolTube[i] ? tubeFlick : 1);
+      pool[i].intensity = poolK[i] * (poolTube[i] ? tubeFlick : 0.7 + 0.3 * tubeFlick);
     }
   }
 
@@ -965,6 +982,35 @@ Look at it to freeze it. Back away to win some distance.</p>
     o.connect(g); g.connect(master); o.start(tt); o.stop(tt + 1);
   }
   // The lunge: it covers the last three metres in a tenth of a second, the camera punches in and shakes.
+  // Death glitch: a copy of the frame drawn on top with torn horizontal bands, RGB-split ghosts and scanlines.
+  var glitchC = null, glitchX = null;
+  function glitchDraw() {
+    if (!glitchC) {
+      glitchC = document.createElement("canvas");
+      glitchC.style.cssText = "position:absolute;inset:0;width:100%;height:100%;pointer-events:none;display:none";
+      el.gl.appendChild(glitchC); glitchX = glitchC.getContext("2d");
+    }
+    if (state !== "dead") { glitchC.style.display = "none"; return; }
+    var src = renderer.domElement, w = src.width, h = src.height;
+    if (glitchC.width !== w || glitchC.height !== h) { glitchC.width = w; glitchC.height = h; }
+    glitchC.style.display = "block";
+    var k = stateT < 2.5 ? 1 : 0.55, burst = Math.random() < 0.35 * k;
+    var x = glitchX; x.globalCompositeOperation = "source-over"; x.clearRect(0, 0, w, h);
+    x.drawImage(src, 0, 0);
+    var bands = burst ? 4 + Math.floor(Math.random() * 8) : 1;
+    for (var i = 0; i < bands; i++) {
+      var by = Math.random() * h, bh = (0.01 + Math.random() * 0.09) * h, off = (Math.random() - 0.5) * w * 0.25 * k;
+      x.drawImage(src, 0, by, w, bh, off, by, w, bh);
+    }
+    if (burst) {
+      var sp = (4 + Math.random() * 14) * (w / 1000);
+      x.globalCompositeOperation = "lighter"; x.globalAlpha = 0.55;
+      x.drawImage(src, -sp, 0); x.globalCompositeOperation = "multiply"; x.fillStyle = "#ff0030"; x.globalAlpha = 0.25; x.fillRect(0, 0, w, h);
+      x.globalAlpha = 1; x.globalCompositeOperation = "source-over";
+      var inv = Math.random() < 0.18; if (inv) { x.globalCompositeOperation = "difference"; x.fillStyle = "#fff"; x.globalAlpha = 0.8; x.fillRect(0, Math.random() * h, w, (0.03 + Math.random() * 0.1) * h); x.globalAlpha = 1; x.globalCompositeOperation = "source-over"; }
+    }
+    x.fillStyle = "rgba(0,0,0,0.22)"; for (var yy = 0; yy < h; yy += 4) x.fillRect(0, yy, w, 1);
+  }
   function scareTick(dt) {
     if (state !== "dead") { if (shakeT > 0) shakeT = 0; camera.fov !== 72 && (camera.fov = 72, camera.updateProjectionMatrix()); return; }
     var k = Math.min(1, stateT / 0.11), e = k * k * (3 - 2 * k), d = scareD + (0.42 - scareD) * e;
@@ -1584,17 +1630,17 @@ Look at it to freeze it. Back away to win some distance.</p>
     }
     flickT -= dt;
     if (flickT <= 0) {
-      flickSeq = flickSeq > 0 ? flickSeq - 1 : (Math.random() < 0.8 ? 3 + Math.floor(Math.random() * 6) : 0);
-      baseFlick = flickSeq > 0 ? (flickSeq % 2 ? 0.08 + Math.random() * 0.2 : 1) : 1;
-      flickT = flickSeq > 0 ? 0.04 + Math.random() * 0.09 : 0.5 + Math.random() * 2;
+      flickSeq = flickSeq > 0 ? flickSeq - 1 : (Math.random() < 0.92 ? 4 + Math.floor(Math.random() * 9) : 0);
+      baseFlick = flickSeq > 0 ? (flickSeq % 2 ? (Math.random() < 0.3 ? 0.01 : 0.05 + Math.random() * 0.25) : 0.7 + Math.random() * 0.3) : 1;
+      flickT = flickSeq > 0 ? 0.025 + Math.random() * 0.08 : 0.12 + Math.random() * 0.7;
     }
-    tubeFlick = baseFlick * (0.86 + 0.14 * Math.sin(t * 53) * Math.sin(t * 17.3));
+    tubeFlick = baseFlick * (0.78 + 0.22 * Math.sin(t * 61) * Math.sin(t * 19.3));
     ambLight.intensity = 0.4 * (0.6 + 0.4 * tubeFlick);
     tubeLitMat.color.setRGB(0.84 * tubeFlick, 0.93 * tubeFlick, tubeFlick); tubeGlowMat.opacity = 0.55 * tubeFlick;
-    for (var pk = 0; pk < pool.length; pk++) if (poolTube[pk]) pool[pk].intensity = poolK[pk] * tubeFlick;
+    for (var pk = 0; pk < pool.length; pk++) pool[pk].intensity = poolK[pk] * (poolTube[pk] ? tubeFlick : 0.7 + 0.3 * tubeFlick);
     if (entRig) { animAura(entRig.aura, t, entRig.w); if (state !== "dead") trackHead(entRig); }
     for (var hi = 0; hi < hunted.length; hi++) if (hunted[hi].rig) { animAura(hunted[hi].rig.aura, t + hi * 3.7, 1); trackHead(hunted[hi].rig); }
-    animAxe(dt); animHunted(dt); scareTick(dt); breathTick(dt);
+    animAxe(dt); animHunted(dt); scareTick(dt); breathTick(dt); mistTick(t);
   }
   function draw() {
     var bob = (!RM && state === "play" && walkT > 0 && stepT > 0 && !held && forced <= 0 && (keys.KeyW || keys.KeyS || keys.ArrowUp || keys.ArrowDown || walkBtn)) ? Math.sin(walkT * 8) * 0.03 : 0;
@@ -1603,6 +1649,7 @@ Look at it to freeze it. Back away to win some distance.</p>
     if (shakeT > 0 && state === "dead") { var sa = Math.min(1, shakeT) * 0.05; camera.rotation.x += (Math.random() - 0.5) * sa; camera.rotation.y += (Math.random() - 0.5) * sa; camera.rotation.z = (Math.random() - 0.5) * sa * 1.5; }
     ui();
     renderer.render(scene, camera);
+    glitchDraw();
   }
   function frame(now) {
     var dt = Math.min(0.05, (now - last) / 1000); last = now;
