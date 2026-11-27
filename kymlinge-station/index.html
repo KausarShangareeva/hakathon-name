@@ -210,11 +210,11 @@ Look at it to freeze it. Back away to win some distance.</p>
   el.gl.appendChild(renderer.domElement);
 
   var scene = new THREE.Scene();
-  scene.fog = new THREE.FogExp2(0x030504, 0.07);
+  scene.fog = new THREE.FogExp2(0x020302, 0.105);
   var camera = new THREE.PerspectiveCamera(72, 16 / 9, 0.1, 60);
   camera.rotation.order = "YXZ";
   scene.add(camera);
-  scene.add(new THREE.AmbientLight(0x151d1a, 0.9));
+  var ambient = new THREE.AmbientLight(0x101614, 0.4); scene.add(ambient);
 
   var pool = [];
   for (var li = 0; li < 8; li++) {
@@ -306,8 +306,8 @@ Look at it to freeze it. Back away to win some distance.</p>
     return t;
   }
   var wallTex = sheetTex(TEXDATA.wall, true), floorTex = sheetTex(TEXDATA.floor, true), ceilTex = sheetTex(TEXDATA.ceil, true), woodTex = sheetTex(TEXDATA.wood, false);
-  var wallMat = new THREE.MeshStandardMaterial({ map: wallTex, color: 0x8c8c8c, roughness: 0.92, metalness: 0 });
-  var floorMat = new THREE.MeshStandardMaterial({ map: floorTex, color: 0x8a8a8a, roughness: 0.42, metalness: 0.18 });
+  var wallMat = new THREE.MeshStandardMaterial({ map: wallTex, color: 0x626262, roughness: 0.92, metalness: 0 });
+  var floorMat = new THREE.MeshStandardMaterial({ map: floorTex, color: 0x5e5e5e, roughness: 0.42, metalness: 0.18 });
   var ceilMat = new THREE.MeshStandardMaterial({ map: ceilTex, roughness: 1, metalness: 0 });
   var woodMat2 = new THREE.MeshStandardMaterial({ map: woodTex, roughness: 0.9, emissive: 0x0d0805 });
   var redLampMat = new THREE.MeshBasicMaterial({ color: 0xff3a22 });
@@ -319,7 +319,7 @@ Look at it to freeze it. Back away to win some distance.</p>
     return new THREE.CanvasTexture(c);
   }
   var tubeGlowMat = new THREE.SpriteMaterial({ map: glowSpriteTex(), blending: THREE.AdditiveBlending, depthWrite: false, transparent: true, opacity: 0.55 });
-  var tubeFlick = 1, flickT = 4, flickSeq = 0;
+  var tubeFlick = 1, baseFlick = 1, flickT = 1, flickSeq = 0;
   // Spray-paint graffiti, as on the tunnel walls in the reference.
   function graffitiTexture(txt, col) {
     return canvasTex(256, 96, function (c, w, h) {
@@ -502,7 +502,6 @@ Look at it to freeze it. Back away to win some distance.</p>
     rig.w += Math.max(-dt * 3, Math.min(dt * 3, (wantRun ? 1 : 0) - rig.w));
     rig.walk.setEffectiveWeight(1 - rig.w); rig.run.setEffectiveWeight(rig.w);
     rig.mixer.update(dt);
-    rig.t += dt; animAura(rig.aura, rig.t, rig.w);
   }
   // Dark energy: a cold violet-teal rim glow behind the body plus wisps that rise and curl off it.
   var auraMat = null, wispMat = null;
@@ -879,19 +878,51 @@ Look at it to freeze it. Back away to win some distance.</p>
     el.level.textContent = gmode === "hunt" ? "Hunt · second deaths " + caught + "/" + (hunted.length || HUNT_N) : "Level " + level;
     el.best.textContent = "Best " + best;
   }
+  var scareD = 0, scareFx = 0, scareFz = 0, scareRoot = false, flashEl = null, shakeT = 0;
+  function scareFlash() {
+    if (!flashEl) {
+      flashEl = document.createElement("div");
+      flashEl.style.cssText = "position:fixed;inset:0;pointer-events:none;z-index:50;background:#fff;opacity:0";
+      document.body.appendChild(flashEl);
+    }
+    flashEl.style.transition = "none"; flashEl.style.background = "#fff"; flashEl.style.opacity = "0.95";
+    setTimeout(function () { flashEl.style.transition = "opacity .5s ease-out, background .5s"; flashEl.style.background = "#a00000"; flashEl.style.opacity = "0.55"; }, 70);
+    setTimeout(function () { flashEl.style.transition = "opacity 1.4s ease-in"; flashEl.style.opacity = "0.18"; }, 600);
+    shakeT = 1.1;
+  }
+  function jumpSound() {
+    thump(1.0, 70, 0.9); thump(0.8, 38, 1.2);
+    burst("bandpass", 2200, 1.2, 0.9, 0.9); burst("highpass", 3500, 0.7, 0.7, 0.6); burst("lowpass", 300, 0.7, 0.9, 1.2);
+    if (!AC || !soundOn) return;
+    var tt = AC.currentTime, o = AC.createOscillator(), g = AC.createGain();
+    o.type = "sawtooth"; o.frequency.setValueAtTime(900, tt); o.frequency.exponentialRampToValueAtTime(180, tt + 0.8);
+    g.gain.setValueAtTime(0.0001, tt); g.gain.exponentialRampToValueAtTime(0.5, tt + 0.03); g.gain.exponentialRampToValueAtTime(0.0001, tt + 0.9);
+    o.connect(g); g.connect(master); o.start(tt); o.stop(tt + 1);
+  }
+  // The lunge: it covers the last three metres in a tenth of a second, the camera punches in and shakes.
+  function scareTick(dt) {
+    if (state !== "dead") { if (shakeT > 0) shakeT = 0; camera.fov !== 72 && (camera.fov = 72, camera.updateProjectionMatrix()); return; }
+    var k = Math.min(1, stateT / 0.11), e = k * k * (3 - 2 * k), d = scareD + (0.42 - scareD) * e;
+    ent.position.set(px + scareFx * d, Math.max(0, Math.sin(k * Math.PI) * 0.15), pz + scareFz * d);
+    if (entRig) { entRig.mixer.update(dt * 2.5); }
+    var f = 72 + 22 * e; if (camera.fov !== f) { camera.fov = f; camera.updateProjectionMatrix(); }
+    if (shakeT > 0) shakeT -= dt;
+  }
   function die() {
     state = "dead"; stateT = 0; held = false; walkBtn = false; lid = 0;
     el.blinkBtn.classList.remove("down"); el.walkBtn.classList.remove("down");
     var fx = -Math.sin(yaw), fz = -Math.cos(yaw);
-    ent.position.set(px + fx * 0.95, 0, pz + fz * 0.95);
-    ent.rotation.y = Math.atan2(-fx, -fz); pitch = 0.5;
+    scareD = 3.2; scareFx = fx; scareFz = fz; scareRoot = true;
+    ent.visible = true; if (entRig) entRig.w = 1;
+    ent.position.set(px + fx * scareD, 0, pz + fz * scareD);
+    ent.rotation.y = Math.atan2(-fx, -fz); pitch = 0.18;
+    scareFlash(); jumpSound();
     cleared = level - 1;
     if (cleared > best) { best = cleared; try { localStorage.setItem("sista-best-3d", String(best)); } catch (e) {} }
     updateHud();
     el.oTitle.textContent = "It was right behind you.";
     el.oBody.textContent = "Levels cleared: " + cleared + ". Best: " + best + ".";
     el.oCta.textContent = "Press space or tap to try again";
-    thump(0.6, 55, 0.5);
   }
   function win() {
     state = "won"; stateT = 0; held = false; walkBtn = false; lid = 0;
@@ -1396,18 +1427,23 @@ Look at it to freeze it. Back away to win some distance.</p>
     }
     flickT -= dt;
     if (flickT <= 0) {
-      flickSeq = flickSeq > 0 ? flickSeq - 1 : (Math.random() < 0.5 ? 3 : 0);
-      tubeFlick = flickSeq > 0 ? (flickSeq % 2 ? 0.25 : 1) : 1;
-      flickT = flickSeq > 0 ? 0.06 + Math.random() * 0.08 : 2 + Math.random() * 5;
+      flickSeq = flickSeq > 0 ? flickSeq - 1 : (Math.random() < 0.8 ? 3 + Math.floor(Math.random() * 6) : 0);
+      baseFlick = flickSeq > 0 ? (flickSeq % 2 ? 0.08 + Math.random() * 0.2 : 1) : 1;
+      flickT = flickSeq > 0 ? 0.04 + Math.random() * 0.09 : 0.5 + Math.random() * 2;
     }
+    tubeFlick = baseFlick * (0.86 + 0.14 * Math.sin(t * 53) * Math.sin(t * 17.3));
+    ambient.intensity = 0.4 * (0.6 + 0.4 * tubeFlick);
     tubeLitMat.color.setRGB(0.84 * tubeFlick, 0.93 * tubeFlick, tubeFlick); tubeGlowMat.opacity = 0.55 * tubeFlick;
     for (var pk = 0; pk < pool.length; pk++) if (poolTube[pk]) pool[pk].intensity = poolK[pk] * tubeFlick;
-    animAxe(dt); animHunted(dt);
+    if (entRig) animAura(entRig.aura, t, entRig.w);
+    for (var hi = 0; hi < hunted.length; hi++) if (hunted[hi].rig) animAura(hunted[hi].rig.aura, t + hi * 3.7, 1);
+    animAxe(dt); animHunted(dt); scareTick(dt);
   }
   function draw() {
     var bob = (!RM && state === "play" && walkT > 0 && stepT > 0 && !held && forced <= 0 && (keys.KeyW || keys.KeyS || keys.ArrowUp || keys.ArrowDown || walkBtn)) ? Math.sin(walkT * 8) * 0.03 : 0;
     camera.position.set(px, EYE + bob, pz);
     camera.rotation.set(pitch, yaw, 0);
+    if (shakeT > 0 && state === "dead") { var sa = Math.min(1, shakeT) * 0.05; camera.rotation.x += (Math.random() - 0.5) * sa; camera.rotation.y += (Math.random() - 0.5) * sa; camera.rotation.z = (Math.random() - 0.5) * sa * 1.5; }
     ui();
     renderer.render(scene, camera);
   }
@@ -1419,7 +1455,7 @@ Look at it to freeze it. Back away to win some distance.</p>
   // Used by the recording harness: advance the game n fixed steps, then draw once.
   window.__game = { start: function () { startGame(); }, ent: ent, MODEL: MODEL,
     place: function (d, y) { yaw = y || 0; pitch = 0; var fx = -Math.sin(yaw), fz = -Math.cos(yaw); ent.visible = true; ent.position.set(px + fx * d, 0, pz + fz * d); ent.rotation.y = Math.atan2(-fx, -fz); },
-    rig: function () { return entRig; } };
+    rig: function () { return entRig; }, die: function () { die(); } };
   window.__step = function (n, dt) { for (var i = 0; i < n; i++) tick(dt || 0.05); draw(); return { state: state, gmode: gmode, level: level, caught: caught }; };
 
   var boot = function () {
