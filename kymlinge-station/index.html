@@ -615,6 +615,7 @@ Look at it to freeze it. Back away to win some distance.</p>
   var level = 1, best = 0;
   try { best = parseInt(localStorage.getItem("sista-best-3d") || "0", 10) || 0; } catch (e) {}
   var gw = 0, gh = 0, grid = [], levelGroup = null, lightSrc = [], exitPos = { x: 0, z: 0 };
+  var railHall = null, trainSet = {};
   var spawn = { x: 0, z: 0 }, startPos = { x: 0, z: 0 }, texKeep = [];
   var DIRS = [[1, 0], [-1, 0], [0, 1], [0, -1]];
 
@@ -641,6 +642,259 @@ Look at it to freeze it. Back away to win some distance.</p>
   function disposeGroup(g) {
     g.traverse(function (o) { if (o.geometry) o.geometry.dispose(); });
     scene.remove(g);
+  }
+
+
+  /* ---------- Set pieces: the railway hall and the stairs to a boarded-up exit ---------- */
+  var ballastMat = new THREE.MeshStandardMaterial({ color: 0x1f1d1b, roughness: 1 });
+  var railMat = new THREE.MeshStandardMaterial({ color: 0x8d9190, metalness: 0.9, roughness: 0.32 });
+  var sleeperMat = new THREE.MeshStandardMaterial({ color: 0x2b2018, roughness: 1 });
+  var trainMat = new THREE.MeshStandardMaterial({ color: 0xaab4b8, metalness: 0.75, roughness: 0.36, emissive: 0x0b1114 });
+  var trainDark = new THREE.MeshStandardMaterial({ color: 0x15191b, metalness: 0.5, roughness: 0.6 });
+  var glassMat = new THREE.MeshStandardMaterial({ color: 0x050a0c, metalness: 0.9, roughness: 0.06, emissive: 0x0a1c24 });
+  var edgeMat = new THREE.MeshStandardMaterial({ color: 0xb59a16, roughness: 0.8, emissive: 0x241e02 });
+  var tunnelMat = new THREE.MeshBasicMaterial({ color: 0x000000 });
+  var cageMat = new THREE.MeshBasicMaterial({ color: 0x0c0c0c, wireframe: true });
+  var warmLampMat = new THREE.MeshBasicMaterial({ color: 0xffb36a });
+  var warmGlowMat = new THREE.SpriteMaterial({ map: whiteGlowTex(), color: 0xff9a4a, blending: THREE.AdditiveBlending, depthWrite: false, transparent: true, opacity: 0.55, fog: false });
+  function addBox(g, mat, w, h, d, x, y, z, ry) { var m = new THREE.Mesh(boxGeo, mat); m.scale.set(w, h, d); m.position.set(x, y, z); if (ry) m.rotation.y = ry; g.add(m); return m; }
+  function tapeTexture() {
+    return canvasTex(128, 16, function (c, w, h) {
+      c.fillStyle = "#d4b414"; c.fillRect(0, 0, w, h); c.fillStyle = "#111";
+      for (var i = -2; i < 12; i++) { c.beginPath(); c.moveTo(i * 16, h); c.lineTo(i * 16 + 8, h); c.lineTo(i * 16 + 16, 0); c.lineTo(i * 16 + 8, 0); c.fill(); }
+    });
+  }
+  function addRailway() {
+    if (!railHall) return;
+    var h = railHall, X0 = h.xa * CELL, X1 = (h.xb + 1) * CELL, zc = (h.z0 + 1.5) * CELL, L = X1 - X0, g = new THREE.Group(), x;
+    var bed = new THREE.Mesh(new THREE.PlaneGeometry(L, CELL), ballastMat); bed.rotation.x = -Math.PI / 2; bed.position.set(X0 + L / 2, 0.012, zc); g.add(bed);
+    for (x = X0 + 0.4; x < X1; x += 0.72) addBox(g, sleeperMat, 0.22, 0.09, 2.5, x, 0.06, zc);
+    [-0.72, 0.72].forEach(function (o) { addBox(g, railMat, L, 0.09, 0.07, X0 + L / 2, 0.14, zc + o); });
+    [-1, 1].forEach(function (sd) { addBox(g, edgeMat, L, 0.012, 0.18, X0 + L / 2, 0.02, zc + sd * (CELL / 2 - 0.12)); });
+    // the train, parked: silver, silent, windows dark
+    var tx0 = (h.xa + 2) * CELL, tx1 = (h.xb - 1) * CELL, tl = tx1 - tx0, tc = (tx0 + tx1) / 2;
+    addBox(g, trainMat, tl, 2.75, 2.6, tc, 1.62, zc);
+    addBox(g, trainDark, tl + 0.02, 0.35, 2.64, tc, 0.28, zc);
+    addBox(g, trainDark, tl + 0.02, 0.12, 2.64, tc, 3.02, zc);
+    [-1, 1].forEach(function (sd) {
+      addBox(g, glassMat, tl - 0.8, 0.9, 0.04, tc, 2.0, zc + sd * 1.31);
+      for (var dxm = tx0 + 3; dxm < tx1 - 1; dxm += 4.5) addBox(g, trainDark, 0.07, 2.2, 0.05, dxm, 1.5, zc + sd * 1.31);
+    });
+    [[tx0 - 0.02, -1], [tx1 + 0.02, 1]].forEach(function (e) {
+      addBox(g, glassMat, 0.04, 0.85, 1.9, e[0], 2.1, zc);
+      [-0.8, 0.8].forEach(function (o) {
+        var hl = new THREE.Mesh(boxGeo, new THREE.MeshBasicMaterial({ color: 0xdfeaff })); hl.scale.set(0.05, 0.14, 0.3); hl.position.set(e[0] + e[1] * 0.02, 0.85, zc + o); g.add(hl);
+      });
+      var gl = new THREE.Sprite(tubeGlowMat); gl.scale.set(3.2, 1.6, 1); gl.position.set(e[0] + e[1] * 0.4, 0.9, zc); g.add(gl);
+      lightSrc.push({ x: e[0] + e[1] * 1.6, y: 1.2, z: zc, c: 0xdfeaff, k: 1.1, dist: 9 });
+    });
+    // tunnel mouths at both ends of the track
+    [[X0 + 0.02, 1], [X1 - 0.02, -1]].forEach(function (e) {
+      var tm = new THREE.Mesh(new THREE.PlaneGeometry(CELL * 0.92, 2.7), tunnelMat); tm.position.set(e[0], 1.35, zc); tm.rotation.y = e[1] > 0 ? Math.PI / 2 : -Math.PI / 2; g.add(tm);
+    });
+    // concrete pillars on the platforms (they block you)
+    [h.z0 + 0.5, h.z0 + 2.5].forEach(function (zr, ip) {
+      for (var xp = tx0 + 1.5; xp < tx1 - 1; xp += 6) {
+        var pz2 = ip === 0 ? zr * CELL - CELL / 2 + 0.55 : zr * CELL + CELL / 2 - 0.55;
+        addBox(g, wallMat, 0.75, WALL_H, 0.75, xp, WALL_H / 2, pz2);
+        blockers.push({ x0: xp - 0.4, x1: xp + 0.4, z0: pz2 - 0.4, z1: pz2 + 0.4 });
+      }
+    });
+    levelGroup.add(g);
+  }
+  var stairInfo = [];
+  function addStairs(b0, exit) {
+    stairInfo = [];
+    var cand = [], z, x, k;
+    for (z = 1; z < gh - 1; z++) for (x = 7; x < gw - 1; x++) {
+      if (grid[z][x] !== 0 || trainSet[z * 1000 + x]) continue;
+      if (railHall && x >= railHall.xa - 1 && x <= railHall.xb + 1 && z >= railHall.z0 - 1 && z <= railHall.z0 + 3) continue;
+      if ((x === exit[0] && z === exit[1]) || b0.d[z][x] < 4) continue;
+      if (Math.hypot((x + 0.5) * CELL - spawn.x, (z + 0.5) * CELL - spawn.z) < 1) continue;
+      var open = 0, od = null;
+      for (k = 0; k < 4; k++) { if (grid[z + DIRS[k][1]][x + DIRS[k][0]] === 0) { open++; od = DIRS[k]; } }
+      if (open === 1) cand.push({ x: x, z: z, d: [-od[0], -od[1]] });
+    }
+    for (var i = cand.length - 1; i > 0; i--) { var j = Math.floor(Math.random() * (i + 1)), t = cand[i]; cand[i] = cand[j]; cand[j] = t; }
+    var n = Math.min(cand.length, level >= 4 ? 3 : (level >= 2 ? 2 : 1));
+    for (i = 0; i < n; i++) {
+      var c = cand[i], dx = c.d[0], dz = c.d[1], cx = (c.x + 0.5) * CELL, cz = (c.z + 0.5) * CELL, g = new THREE.Group();
+      g.position.set(cx, 0, cz); g.rotation.y = Math.atan2(dx, dz);
+      for (k = 0; k < 6; k++) addBox(g, wallMat, 2.3, 0.17 * (k + 1), 0.2, 0, 0.17 * (k + 1) / 2, 0.4 + 0.2 * k);
+      [-1.05, 1.05].forEach(function (sx2) {
+        var rl = addBox(g, trainDark, 0.05, 0.05, 1.6, sx2, 1.1, 0.95); rl.rotation.x = -0.72;
+        [0.5, 1.0, 1.45].forEach(function (zp) { addBox(g, trainDark, 0.05, 1.0 + (zp - 0.4) * 0.8, 0.05, sx2, 0.5 + (zp - 0.4) * 0.4, zp); });
+      });
+      var dm = new THREE.Mesh(new THREE.PlaneGeometry(1.5, 2.05), new THREE.MeshStandardMaterial({ map: doorTex, roughness: 0.6, metalness: 0.3 }));
+      dm.position.set(0, 1.02 + 1.025, CELL / 2 - 0.03); dm.rotation.y = Math.PI; g.add(dm);
+      var wood = [1.3, 1.72, 2.14, 2.56];
+      wood.forEach(function (wy, wi) { var pl = addBox(g, woodMat2, 1.95, 0.17, 0.04, (Math.random() - 0.5) * 0.1, wy + 1.0, CELL / 2 - 0.08); pl.rotation.z = (Math.random() - 0.5) * 0.12; });
+      var tp = tapeTexture(); texKeep.push(tp);
+      var tape = new THREE.Mesh(new THREE.PlaneGeometry(2.2, 0.14), new THREE.MeshStandardMaterial({ map: tp, roughness: 0.7 }));
+      tape.position.set(0, 2.5, CELL / 2 - 0.115); tape.rotation.y = Math.PI; tape.rotation.z = 0.5; g.add(tape);
+      var sgt = graffitiTexture("STÄNGD", "#d9d6cf"); texKeep.push(sgt);
+      var sgm = new THREE.Mesh(new THREE.PlaneGeometry(1.2, 0.45), new THREE.MeshStandardMaterial({ map: sgt, transparent: true, roughness: 1, depthWrite: false }));
+      sgm.position.set(0, 2.2 + 0.55, CELL / 2 - 0.125); sgm.rotation.y = Math.PI; g.add(sgm);
+      var lamp = new THREE.Mesh(new THREE.SphereGeometry(0.09, 8, 6), warmLampMat); lamp.position.set(0, 2.85, 1.1); g.add(lamp);
+      var cage = new THREE.Mesh(new THREE.SphereGeometry(0.16, 8, 6), cageMat); cage.position.copy(lamp.position); g.add(cage);
+      var wg = new THREE.Sprite(warmGlowMat); wg.scale.set(1.8, 1.8, 1); wg.position.copy(lamp.position); g.add(wg);
+      lightSrc.push({ x: cx + dx * 1.1, y: 2.85, z: cz + dz * 1.1, c: 0xff9a4a, k: 1.5, dist: 9 });
+      levelGroup.add(g); stairInfo.push({ x: cx, z: cz, dx: dx, dz: dz });
+      var bx = dx !== 0 ? [cx + (dx > 0 ? 0.3 : -1.5), cx + (dx > 0 ? 1.5 : -0.3)] : [cx - 1.5, cx + 1.5];
+      var bz = dz !== 0 ? [cz + (dz > 0 ? 0.3 : -1.5), cz + (dz > 0 ? 1.5 : -0.3)] : [cz - 1.5, cz + 1.5];
+      blockers.push({ x0: bx[0], x1: bx[1], z0: bz[0], z1: bz[1] });
+    }
+  }
+
+
+  /* ---------- The way out: Stockholm at night ---------- */
+  var CITY_X = 500, cityGroup = null, cityMode = false, cityT = 0, camY = 0, cityLamps = [], cityBlink = [], cityStepT = 0;
+  function facadeTexture(base, litP) {
+    return canvasTex(128, 256, function (c, w, h) {
+      c.fillStyle = base; c.fillRect(0, 0, w, h);
+      for (var i = 0; i < 900; i++) { c.fillStyle = "rgba(0,0,0," + (Math.random() * 0.18) + ")"; c.fillRect(Math.random() * w, Math.random() * h, 2 + Math.random() * 5, 1 + Math.random() * 3); }
+      var cols = 4, rows = 9, cw = w / cols, ch = h / rows;
+      for (var r = 1; r < rows; r++) for (var q = 0; q < cols; q++) {
+        var lit = Math.random() < litP;
+        c.fillStyle = lit ? "rgba(255,214,130,0.95)" : "rgba(8,12,16,0.92)";
+        c.fillRect(q * cw + cw * 0.22, r * ch + ch * 0.14, cw * 0.56, ch * 0.62);
+        c.fillStyle = "rgba(0,0,0,0.5)"; c.fillRect(q * cw + cw * 0.48, r * ch + ch * 0.14, 2, ch * 0.62);
+      }
+      c.fillStyle = "rgba(0,0,0,0.35)"; c.fillRect(0, h - ch * 1.05, w, ch * 1.05);
+    });
+  }
+  function neonTexture(txt, col) {
+    return canvasTex(256, 96, function (c, w, h) {
+      c.clearRect(0, 0, w, h); c.fillStyle = "rgba(8,10,12,0.9)"; c.fillRect(6, 10, w - 12, h - 20);
+      c.strokeStyle = col; c.lineWidth = 3; c.strokeRect(10, 14, w - 20, h - 28);
+      var fs = 46; c.font = "700 " + fs + "px 'Archivo Narrow', Impact, Arial";
+      while (c.measureText(txt).width > w - 40 && fs > 16) { fs -= 2; c.font = "700 " + fs + "px 'Archivo Narrow', Impact, Arial"; }
+      c.textAlign = "center"; c.textBaseline = "middle"; c.shadowColor = col; c.shadowBlur = 12; c.fillStyle = col; c.fillText(txt, w / 2, h / 2 + 2);
+    });
+  }
+  function tSignTexture() {
+    return canvasTex(256, 256, function (c, w, h) {
+      c.fillStyle = "#0b4fa8"; c.fillRect(0, 0, w, h); c.strokeStyle = "#e9f1ff"; c.lineWidth = 8; c.strokeRect(10, 10, w - 20, h - 20);
+      c.fillStyle = "#e9f1ff"; c.font = "700 190px Arial, sans-serif"; c.textAlign = "center"; c.textBaseline = "middle"; c.fillText("T", w / 2, h / 2 + 8);
+    });
+  }
+  function buildCity() {
+    if (cityGroup) return;
+    var g = new THREE.Group(); g.position.set(CITY_X, 0, 0); cityGroup = g; cityLamps = []; cityBlink = [];
+    var Z0 = 10, Z1 = -120, LEN = Z0 - Z1, zmid = (Z0 + Z1) / 2, i, z;
+    var asphalt = new THREE.MeshStandardMaterial({ color: 0x15181b, roughness: 0.32, metalness: 0.25 });
+    var concrete = new THREE.MeshStandardMaterial({ color: 0x3a3d3e, roughness: 0.9 });
+    var darkWall = new THREE.MeshStandardMaterial({ color: 0x1a1d20, roughness: 1 });
+    var road = new THREE.Mesh(new THREE.PlaneGeometry(13, LEN - 9), asphalt); road.rotation.x = -Math.PI / 2; road.position.set(0, 0, (1 + Z1) / 2); g.add(road);
+    [-1, 1].forEach(function (sd) {
+      addBox(g, concrete, 3.2, 0.16, LEN - 9, sd * 8.1, 0.08, (1 + Z1) / 2);
+      addBox(g, concrete, 0.2, 0.2, LEN - 9, sd * 6.6, 0.1, (1 + Z1) / 2);
+    });
+    for (z = -4; z > Z1 + 4; z -= 7) addBox(g, new THREE.MeshBasicMaterial({ color: 0x8c8f8f }), 0.2, 0.01, 2.2, 0, 0.02, z);
+    for (i = 0; i < 8; i++) addBox(g, new THREE.MeshBasicMaterial({ color: 0x9a9d9d }), 0.7, 0.01, 3.4, -5.2 + i * 1.5, 0.02, -34);
+    // station entrance: a stairwell going down, under a concrete canopy with the blue T
+    var wallM = wallMat;
+    [-1, 1].forEach(function (sd) { addBox(g, wallM, 0.5, 6.0, 9.2, sd * 2.45, -0.4, 5.6); });
+    addBox(g, wallM, 5.4, 0.5, 9.2, 0, 3.3, 5.6);
+    addBox(g, wallM, 5.4, 6.0, 0.5, 0, -0.1, 10.2);
+    var stairM = new THREE.MeshStandardMaterial({ color: 0x55585a, roughness: 0.85 });
+    for (i = 0; i < 12; i++) { var sy = -2.4 + 0.2 * (i + 1); addBox(g, stairM, 4.4, sy + 2.6, 0.7, 0, (sy - 2.6) / 2 + 0.0, 8.8 - i * 0.7 + 0.35 - 0.35); }
+    var floorIn = new THREE.Mesh(new THREE.PlaneGeometry(4.4, 9.2), asphalt); floorIn.rotation.x = -Math.PI / 2; floorIn.position.set(0, -2.45, 5.6); g.add(floorIn);
+    var tTex = tSignTexture(); var tSign = new THREE.Mesh(new THREE.PlaneGeometry(1.5, 1.5), new THREE.MeshBasicMaterial({ map: tTex })); tSign.position.set(0, 4.3, 1.15); tSign.rotation.y = 0; g.add(tSign);
+    var nameTex = neonTexture("KYMLINGE", "#e3efe8"); var nameSign = new THREE.Mesh(new THREE.PlaneGeometry(2.6, 0.97), new THREE.MeshBasicMaterial({ map: nameTex, transparent: true })); nameSign.position.set(0, 2.85, 1.12); g.add(nameSign);
+    var tGlow = new THREE.Sprite(tubeGlowMat); tGlow.scale.set(6, 4, 1); tGlow.position.set(0, 4.2, 1.5); g.add(tGlow);
+    cityLamps.push({ x: CITY_X, y: 3.0, z: 6.0, c: 0xcfe6ff, k: 1.4, dist: 11, tube: true });
+    cityLamps.push({ x: CITY_X, y: 2.6, z: 1.8, c: 0x8fb8ff, k: 1.2, dist: 12 });
+    // buildings along both sides
+    var pal = ["#8e6f36", "#7a3a2b", "#8b8468", "#4d5c68", "#6d5a3c", "#5d2f2a"], neon = [["APOTEK", "#3dff8a"], ["KAFÉ", "#ffb347"], ["HOTELL", "#6ad1ff"], ["STOCKHOLM", "#e3efe8"], ["BAR", "#ff6a9c"], ["KIOSK", "#ffd23d"]];
+    [-1, 1].forEach(function (sd) {
+      z = -2;
+      var nIdx = 0;
+      while (z > Z1) {
+        var bw = 9 + Math.random() * 6, bh = 14 + Math.random() * 14, bd = 12, bx = sd * (9.7 + bd / 2);
+        var ft = facadeTexture(pal[Math.floor(Math.random() * pal.length)], 0.12); ft.repeat.set(Math.round(bw / 3.2), Math.round(bh / 5)); texKeep.push(ft);
+        addBox(g, darkWall, bd, bh, bw, bx, bh / 2, z - bw / 2);
+        var fa = new THREE.Mesh(new THREE.PlaneGeometry(bw, bh), new THREE.MeshStandardMaterial({ map: ft, roughness: 0.9, emissive: 0x0a0a0a }));
+        fa.position.set(sd * 9.69, bh / 2, z - bw / 2); fa.rotation.y = sd > 0 ? -Math.PI / 2 : Math.PI / 2; g.add(fa);
+        addBox(g, darkWall, bd + 0.6, 0.5, bw + 0.4, bx, bh + 0.2, z - bw / 2);
+        if (Math.random() < 0.7) {
+          var nn = neon[(nIdx++ + (sd > 0 ? 2 : 0)) % neon.length], nt = neonTexture(nn[0], nn[1]);
+          var nm = new THREE.Mesh(new THREE.PlaneGeometry(2.4, 0.9), new THREE.MeshBasicMaterial({ map: nt, transparent: true }));
+          nm.position.set(sd * 9.62, 3.4, z - bw * 0.5); nm.rotation.y = sd > 0 ? -Math.PI / 2 : Math.PI / 2; g.add(nm);
+          var ng = new THREE.Sprite(new THREE.SpriteMaterial({ map: whiteGlowTex(), color: new THREE.Color(nn[1]), blending: THREE.AdditiveBlending, depthWrite: false, transparent: true, opacity: 0.4, fog: false }));
+          ng.scale.set(5, 3, 1); ng.position.set(sd * 9.2, 3.4, z - bw * 0.5); g.add(ng);
+          cityLamps.push({ x: CITY_X + sd * 8.6, y: 3.2, z: z - bw * 0.5, c: new THREE.Color(nn[1]).getHex(), k: 1.0, dist: 9 });
+        }
+        z -= bw + 0.2;
+      }
+    });
+    // street lamps, some dead
+    var poleM = new THREE.MeshStandardMaterial({ color: 0x1e2224, roughness: 0.6, metalness: 0.5 });
+    var lampM = new THREE.MeshBasicMaterial({ color: 0xffd9a0 });
+    var lampGlow = new THREE.SpriteMaterial({ map: whiteGlowTex(), color: 0xffc27a, blending: THREE.AdditiveBlending, depthWrite: false, transparent: true, opacity: 0.55, fog: false });
+    for (i = 0, z = -6; z > Z1 + 6; z -= 15, i++) {
+      [-1, 1].forEach(function (sd) {
+        var zz = z - (sd > 0 ? 7 : 0), dead = (i + (sd > 0 ? 1 : 0)) % 3 === 2;
+        addBox(g, poleM, 0.14, 5.6, 0.14, sd * 6.7, 2.8, zz);
+        addBox(g, poleM, 1.3, 0.1, 0.1, sd * 6.1, 5.6, zz);
+        var head = new THREE.Mesh(new THREE.SphereGeometry(0.2, 8, 6), dead ? darkWall : lampM); head.position.set(sd * 5.5, 5.5, zz); g.add(head);
+        if (!dead) {
+          var gl = new THREE.Sprite(lampGlow); gl.scale.set(4.2, 4.2, 1); gl.position.copy(head.position); g.add(gl);
+          cityLamps.push({ x: CITY_X + sd * 5.5, y: 5.3, z: zz, c: 0xffc27a, k: 2.4, dist: 18 });
+        }
+      });
+    }
+    // wrecked cars, a barrier, paper on the road
+    function car(cx, cz, ry, col, blink) {
+      var cg = new THREE.Group(), body = new THREE.MeshStandardMaterial({ color: col, roughness: 0.4, metalness: 0.6 });
+      addBox(cg, body, 4.2, 0.7, 1.8, 0, 0.6, 0); addBox(cg, body, 2.2, 0.6, 1.6, -0.2, 1.2, 0);
+      addBox(cg, glassMat, 2.25, 0.45, 1.62, -0.2, 1.22, 0);
+      [[-1.4, 0.9], [1.4, 0.9], [-1.4, -0.9], [1.4, -0.9]].forEach(function (w) { var wh = new THREE.Mesh(new THREE.CylinderGeometry(0.34, 0.34, 0.24, 10), trainDark); wh.rotation.x = Math.PI / 2; wh.position.set(w[0], 0.34, w[1]); cg.add(wh); });
+      cg.position.set(cx, 0, cz); cg.rotation.y = ry; cg.rotation.z = 0.04; g.add(cg);
+      if (blink) { var bs = new THREE.Sprite(new THREE.SpriteMaterial({ map: whiteGlowTex(), color: 0xffa020, blending: THREE.AdditiveBlending, depthWrite: false, transparent: true, opacity: 0.9, fog: false })); bs.scale.set(1.6, 1.6, 1); bs.position.set(cx + 1.9 * Math.cos(ry), 0.85, cz - 1.9 * Math.sin(ry)); g.add(bs); cityBlink.push(bs); cityLamps.push({ x: CITY_X + cx, y: 1.0, z: cz, c: 0xffa020, k: 1.0, dist: 7, blink: true }); }
+    }
+    car(2.6, -22, 0.35, 0x3b4048, true); car(-3.2, -44, -0.2, 0x5a2a28, false); car(1.5, -60, 1.2, 0x2f3b3d, false);
+    addBox(g, woodMat2, 3.4, 0.9, 0.12, -2.0, 0.6, -12, 0.2); [-1, 1].forEach(function (sd) { addBox(g, poleM, 0.1, 0.6, 0.1, -2.0 + sd * 1.5, 0.3, -12); });
+    for (i = 0; i < 40; i++) { var pp = new THREE.Mesh(new THREE.PlaneGeometry(0.35, 0.25), new THREE.MeshBasicMaterial({ color: 0x9a9a92 })); pp.rotation.x = -Math.PI / 2; pp.rotation.z = Math.random() * 6; pp.position.set((Math.random() - 0.5) * 11, 0.03, -2 - Math.random() * 90); g.add(pp); }
+    // sky: stars and a thin moon, outside the fog
+    var sp = [], sg = new THREE.BufferGeometry();
+    for (i = 0; i < 500; i++) { var th = Math.random() * 6.28, ph = Math.random() * 1.2 + 0.15, rr = 240; sp.push(Math.cos(th) * Math.cos(ph) * rr, Math.sin(ph) * rr, Math.sin(th) * Math.cos(ph) * rr - 60); }
+    sg.setAttribute("position", new THREE.Float32BufferAttribute(sp, 3));
+    g.add(new THREE.Points(sg, new THREE.PointsMaterial({ color: 0xcfd8e8, size: 1.4, sizeAttenuation: false, fog: false })));
+    var moon = new THREE.Sprite(new THREE.SpriteMaterial({ map: whiteGlowTex(), color: 0xdce8ff, blending: THREE.AdditiveBlending, depthWrite: false, transparent: true, fog: false }));
+    moon.scale.set(70, 70, 1); moon.position.set(-60, 120, -200); g.add(moon);
+    scene.add(g);
+  }
+  var _saved = null;
+  function enterCity() {
+    buildCity(); cityGroup.visible = true; if (levelGroup) levelGroup.visible = false;
+    scene.fog.color.setHex(0x0a1220); scene.fog.density = 0.017; renderer.setClearColor(0x050a14);
+    camera.far = 330; camera.updateProjectionMatrix();
+    ambLight.color.setHex(0x1b2638); ambLight.intensity = 0.9;
+    lightSrc = cityLamps; cityMode = true; cityT = 0; camY = -2.35; cityStepT = 0;
+    px = CITY_X; pz = 9.2; yaw = 0; pitch = 0.05;
+    ent.visible = true; ent.position.set(CITY_X + 0.5, 0, -68); ent.rotation.y = 0;
+    updateLights();
+  }
+  function leaveCity() {
+    if (!cityMode) return;
+    cityMode = false; camY = 0; if (cityGroup) cityGroup.visible = false; if (levelGroup) levelGroup.visible = true;
+    scene.fog.color.setHex(0x030504); scene.fog.density = 0.125; renderer.setClearColor(0x000000);
+    camera.far = 60; camera.updateProjectionMatrix(); ambLight.color.setHex(0x101614); ambLight.intensity = 0.4;
+  }
+  function cityStep(dt) {
+    cityT += dt;
+    var tt = cityT, sp = 3.0;
+    var z = 9.2 - Math.min(tt, 17.5) * sp * (tt < 17.5 ? 1 : 0) - (tt >= 17.5 ? 17.5 * sp : 0);
+    pz = Math.max(-46, z);
+    var stairH = pz > 1 ? -2.4 + (9.2 - pz) / 8.2 * 2.4 : 0;
+    camY = Math.min(0, stairH) + Math.sin(tt * 6) * (tt < 17.5 ? 0.035 : 0);
+    yaw = 0.07 * Math.sin(tt * 0.45) + (pz < 1 ? Math.min(0.2, (1 - pz) * 0.01) * Math.sin(tt * 0.3) : 0);
+    pitch = pz > 1 ? 0.12 : 0.05 * Math.sin(tt * 0.3);
+    cityStepT -= dt; if (cityStepT <= 0 && tt < 17.5) { footstep(1, 0); cityStepT = 0.55; }
+    cityBlink.forEach(function (b, bi) { b.material.opacity = (Math.sin(tt * 5 + bi) > 0.2) ? 0.9 : 0.08; });
+    lightT -= dt; if (lightT <= 0) { updateLights(); lightT = 0.12; }
+    updateRig(entRig || { t: 0, skins: [], bones: {}, root: ent, mixer: { update: function () {} } }, dt * 0.5, false);
   }
 
   function buildLevel(hunt) {
@@ -672,6 +926,30 @@ Look at it to freeze it. Back away to win some distance.</p>
     var cy = Math.floor(gh / 2);
     for (z = Math.max(1, cy - 2); z <= Math.min(gh - 2, cy + 2); z++) for (x = 1; x <= 5; x++) grid[z][x] = 0;
     grid[cy - 1][3] = 1; grid[cy + 1][3] = 1;
+    // The railway hall: three cell rows opened up (platform, track, platform) with a parked train in the middle of the track row.
+    railHall = null; trainSet = {}; blockers = [];
+    (function () {
+      var xa = 7, xb = Math.min(gw - 2, xa + 8);
+      if (xb - xa < 6 || gh < 7) return;
+      var zs = []; for (var zq = 1; zq + 2 <= gh - 2; zq += 2) zs.push(zq);
+      var z0 = zs[Math.floor(Math.random() * zs.length)], zz, xx;
+      for (zz = z0; zz <= z0 + 2; zz++) for (xx = xa; xx <= xb; xx++) grid[zz][xx] = 0;
+      for (xx = xa + 2; xx <= xb - 2; xx++) { grid[z0 + 1][xx] = 1; trainSet[(z0 + 1) * 1000 + xx] = true; }
+      railHall = { xa: xa, xb: xb, z0: z0 };
+    })();
+    // Alcoves: a few wall cells are hollowed out into dead ends, where a stairway to a boarded-up exit will go.
+    (function () {
+      var want = level >= 4 ? 3 : (level >= 2 ? 2 : 1), tries = 0, got = 0;
+      while (got < want && tries++ < 400) {
+        var ax2 = 8 + Math.floor(Math.random() * Math.max(1, gw - 10)), az2 = 1 + Math.floor(Math.random() * (gh - 2));
+        if (ax2 > gw - 2 || grid[az2][ax2] !== 1) continue;
+        if (railHall && ax2 >= railHall.xa - 1 && ax2 <= railHall.xb + 1 && az2 >= railHall.z0 - 1 && az2 <= railHall.z0 + 3) continue;
+        var op = 0;
+        for (var k2 = 0; k2 < 4; k2++) { if (grid[az2 + DIRS[k2][1]][ax2 + DIRS[k2][0]] === 0) op++; }
+        if (op !== 1) continue;
+        grid[az2][ax2] = 0; got++;
+      }
+    })();
     var sx = 2, sz = cy;
     var b0 = bfs(sx, sz), exit = [sx, sz], maxD = 0;
     for (z = 0; z < gh; z++) for (x = 0; x < gw; x++) if (b0.d[z][x] > maxD) { maxD = b0.d[z][x]; exit = [x, z]; }
@@ -711,7 +989,7 @@ Look at it to freeze it. Back away to win some distance.</p>
     // walls
     var wc = [];
     for (z = 0; z < gh; z++) for (x = 0; x < gw; x++) {
-      if (grid[z][x] !== 1) continue;
+      if (grid[z][x] !== 1 || trainSet[z * 1000 + x]) continue;
       for (i = 0; i < 4; i++) {
         var ax = x + DIRS[i][0], az = z + DIRS[i][1];
         if (ax >= 0 && az >= 0 && ax < gw && az < gh && grid[az][ax] === 0) { wc.push([x, z]); break; }
@@ -772,6 +1050,41 @@ Look at it to freeze it. Back away to win some distance.</p>
     lightSrc.push({ x: exitPos.x, y: 2.2, z: exitPos.z });
     }
 
+    addRailway(); addStairs(b0, exit);
+
+    // Resident Evil style clutter: rusty drums, crates, bin bags, a caged work lamp in the corners.
+    (function () {
+      var drumM = new THREE.MeshStandardMaterial({ color: 0x3b4a3e, roughness: 0.55, metalness: 0.5 });
+      var rustM = new THREE.MeshStandardMaterial({ color: 0x5a3320, roughness: 0.8, metalness: 0.4 });
+      var bagM = new THREE.MeshStandardMaterial({ color: 0x0c0d0d, roughness: 0.35 });
+      var crateM = new THREE.MeshStandardMaterial({ color: 0x4a3a28, roughness: 0.95 });
+      var cageM = new THREE.MeshBasicMaterial({ color: 0xffb060 });
+      var n = 0, lim = 6 + level * 2;
+      for (var zq = 1; zq < gh - 1 && n < lim; zq++) for (var xq = 7; xq < gw - 1 && n < lim; xq++) {
+        if (grid[zq][xq] !== 0 || Math.random() > 0.07) continue;
+        if (railHall && xq >= railHall.xa - 1 && xq <= railHall.xb + 1 && zq >= railHall.z0 - 1 && zq <= railHall.z0 + 3) continue;
+        if ((xq === exit[0] && zq === exit[1]) || inBlock((xq + 0.5) * CELL, (zq + 0.5) * CELL)) continue;
+        var dq = DIRS[Math.floor(Math.random() * 4)];
+        if (grid[zq + dq[1]][xq + dq[0]] !== 1) continue;
+        var ox = (xq + 0.5) * CELL + dq[0] * 1.15, oz = (zq + 0.5) * CELL + dq[1] * 1.15, kind = Math.floor(Math.random() * 3), pg = new THREE.Group();
+        if (kind === 0) {
+          for (var d = 0; d < 2; d++) { var dr = new THREE.Mesh(new THREE.CylinderGeometry(0.28, 0.28, 0.9, 10), d ? rustM : drumM); dr.position.set(d * 0.62 - 0.3, 0.45, (d ? 0.1 : -0.05) ); pg.add(dr);
+            var ring = new THREE.Mesh(new THREE.CylinderGeometry(0.29, 0.29, 0.05, 10), trainDark); ring.position.set(dr.position.x, 0.6, dr.position.z); pg.add(ring); }
+        } else if (kind === 1) {
+          addBox(pg, crateM, 0.9, 0.8, 0.9, 0, 0.4, 0, 0.2); addBox(pg, crateM, 0.7, 0.6, 0.7, 0.15, 1.1, 0, -0.4);
+        } else {
+          for (var b2 = 0; b2 < 4; b2++) { var bg = new THREE.Mesh(new THREE.SphereGeometry(0.3 + Math.random() * 0.1, 8, 6), bagM); bg.scale.y = 0.75; bg.position.set((Math.random() - 0.5) * 0.9, 0.25, (Math.random() - 0.5) * 0.5); pg.add(bg); }
+        }
+        pg.position.set(ox, 0, oz); pg.rotation.y = Math.atan2(dq[0], dq[1]) + Math.PI / 2; levelGroup.add(pg);
+        blockers.push({ x0: ox - 0.5, x1: ox + 0.5, z0: oz - 0.5, z1: oz + 0.5 }); n++;
+        if (Math.random() < 0.5) {
+          var lx = (xq + 0.5) * CELL + dq[0] * 1.4, lz = (zq + 0.5) * CELL + dq[1] * 1.4;
+          var lamp = new THREE.Mesh(new THREE.SphereGeometry(0.13, 8, 6), cageM); lamp.position.set(lx, 2.5, lz); levelGroup.add(lamp);
+          var cg = new THREE.Mesh(new THREE.SphereGeometry(0.19, 6, 5), new THREE.MeshBasicMaterial({ color: 0x1a1008, wireframe: true })); cg.position.copy(lamp.position); levelGroup.add(cg);
+          lightSrc.push({ x: lx - dq[0] * 0.4, y: 2.4, z: lz - dq[1] * 0.4, c: 0xff9a4a, k: 1.3, dist: 8 });
+        }
+      }
+    })();
     // Props from the real station: wooden barriers along the walls, puddles, dead fluorescent tubes.
     var pcount = 0;
     for (z = 1; z < gh - 1; z++) for (x = 1; x < gw - 1; x++) {
@@ -917,6 +1230,7 @@ Look at it to freeze it. Back away to win some distance.</p>
     updateLights();
   }
   function startGame() {
+    leaveCity();
     if (state === "dead" || state === "end") { level = 1; gmode = "escape"; }
     else if (state === "won") { level++; }
     initAudio();
@@ -933,7 +1247,7 @@ Look at it to freeze it. Back away to win some distance.</p>
     if (state === "dead") { if (v && stateT > 2.9) startGame(); return; }
     if (state === "won") { if (v && stateT > 0.6) startGame(); return; }
     if (state === "choice") return;
-    if (state === "end") { if (v && stateT > 0.9) startGame(); return; }
+    if (state === "end") { if (v && stateT > (cityMode ? 18.5 : 0.9)) startGame(); return; }
     if (state === "intro") {
       if (v && stateT > 0.4) { state = "play"; held = false; ignoreUntilRelease = true; el.overlay.hidden = true; }
       return;
@@ -1054,7 +1368,9 @@ Look at it to freeze it. Back away to win some distance.</p>
   }
 
   /* ---------- Movement and the entity ---------- */
-  function blocked(x, z) { return solid(x - RAD, z - RAD) || solid(x + RAD, z - RAD) || solid(x - RAD, z + RAD) || solid(x + RAD, z + RAD); }
+  var blockers = [];
+  function inBlock(x, z) { for (var i = 0; i < blockers.length; i++) { var b = blockers[i]; if (x >= b.x0 && x <= b.x1 && z >= b.z0 && z <= b.z1) return true; } return false; }
+  function blocked(x, z) { return solid(x - RAD, z - RAD) || solid(x + RAD, z - RAD) || solid(x - RAD, z + RAD) || solid(x + RAD, z + RAD) || inBlock(x - RAD, z - RAD) || inBlock(x + RAD, z - RAD) || inBlock(x - RAD, z + RAD) || inBlock(x + RAD, z + RAD); }
   function tryMove(dx, dz) {
     if (!blocked(px + dx, pz)) px += dx;
     if (!blocked(px, pz + dz)) pz += dz;
@@ -1291,8 +1607,9 @@ Look at it to freeze it. Back away to win some distance.</p>
   el.leaveBtn.addEventListener("click", function () {
     state = "end"; stateT = 0; gmode = "escape";
     el.choices.hidden = true;
-    el.oTitle.textContent = "You walked out into the morning.";
-    el.oBody.textContent = "Levels cleared: 3.\nYou do not look back.";
+    enterCity();
+    el.oTitle.textContent = "You walked out into Stockholm.";
+    el.oBody.textContent = "Levels cleared: 3.\nThe city is empty. Nothing follows you.\nAt the end of the street, something stands very still.";
     el.oCta.textContent = "Press space or tap to play again";
   });
   el.huntBtn.addEventListener("click", startHunt);
@@ -1623,7 +1940,7 @@ Look at it to freeze it. Back away to win some distance.</p>
     if (state === "play") { if (gmode === "hunt") stepHunt(dt); else stepPlay(dt); }
     else if (state === "dead" || state === "won" || state === "choice" || state === "end" || state === "intro") {
       stateT += dt;
-      if (stateT > (state === "dead" ? 2.8 : 1.0) && el.overlay.hidden) {
+      if (stateT > (state === "dead" ? 2.8 : (cityMode ? 18 : 1.0)) && el.overlay.hidden) {
         el.overlay.hidden = false;
         if (state === "choice") { el.choices.hidden = false; el.leaveBtn.focus(); }
       } else if (state === "choice" && stateT > 1.0 && el.choices.hidden) {
@@ -1637,11 +1954,12 @@ Look at it to freeze it. Back away to win some distance.</p>
       flickT = flickSeq > 0 ? 0.025 + Math.random() * 0.08 : 0.12 + Math.random() * 0.7;
     }
     tubeFlick = baseFlick * (0.78 + 0.22 * Math.sin(t * 61) * Math.sin(t * 19.3));
-    ambLight.intensity = 0.4 * (0.6 + 0.4 * tubeFlick);
+    if (!cityMode) ambLight.intensity = 0.4 * (0.6 + 0.4 * tubeFlick);
     tubeLitMat.color.setRGB(0.84 * tubeFlick, 0.93 * tubeFlick, tubeFlick); tubeGlowMat.opacity = 0.55 * tubeFlick;
     for (var pk = 0; pk < pool.length; pk++) pool[pk].intensity = poolK[pk] * (poolTube[pk] ? tubeFlick : 0.7 + 0.3 * tubeFlick);
     if (entRig) animAura(entRig.aura, t, entRig.w);
     for (var hi = 0; hi < hunted.length; hi++) if (hunted[hi].rig) animAura(hunted[hi].rig.aura, t + hi * 3.7, 1);
+    if (cityMode && state === "end") cityStep(dt);
     animAxe(dt); animHunted(dt); scareTick(dt); breathTick(dt); mistTick(t);
   }
   function draw() {
@@ -1658,7 +1976,7 @@ Look at it to freeze it. Back away to win some distance.</p>
       var dn = ent.visible ? Math.hypot(ent.position.x - px, ent.position.z - pz) : 99;
       if (dn < 7) { var fr = (1 - dn / 7) * 0.006; rx += (Math.random() - 0.5) * fr; ry += (Math.random() - 0.5) * fr; rz += (Math.random() - 0.5) * fr * 1.5; }
     }
-    camera.position.set(px + cx, EYE + cy, pz + cz);
+    camera.position.set(px + cx, EYE + cy + camY, pz + cz);
     camera.rotation.set(pitch + rx, yaw + ry, rz);
     if (state === "dead") {
       // Being eaten: the camera is thrown around, harder at first, easing off as the dark closes in.
@@ -1680,7 +1998,7 @@ Look at it to freeze it. Back away to win some distance.</p>
   // Used by the recording harness: advance the game n fixed steps, then draw once.
   window.__game = { start: function () { startGame(); }, ent: ent, MODEL: MODEL,
     place: function (d, y) { yaw = y || 0; pitch = 0; var fx = -Math.sin(yaw), fz = -Math.cos(yaw); ent.visible = true; ent.position.set(px + fx * d, 0, pz + fz * d); ent.rotation.y = Math.atan2(-fx, -fz); },
-    rig: function () { return entRig; }, die: function () { die(); }, sfx: function () { footstep(1, 0); footstep(1.5, 8); heartBeat(0.8); return !!AC; } };
+    rig: function () { return entRig; }, die: function () { die(); }, go: function (x, z, y, p) { px = x; pz = z; yaw = y; pitch = p || 0; updateLights(); }, info: function () { return { grid: grid.map(function (r) { return r.join(""); }), rail: railHall, stairs: stairInfo, CELL: CELL, start: startPos, exit: exitPos }; },  sfx: function () { footstep(1, 0); footstep(1.5, 8); heartBeat(0.8); return !!AC; } };
   window.__step = function (n, dt) { for (var i = 0; i < n; i++) tick(dt || 0.05); draw(); return { state: state, gmode: gmode, level: level, caught: caught }; };
 
   var boot = function () {
