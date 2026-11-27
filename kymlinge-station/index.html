@@ -972,7 +972,17 @@ Look at it to freeze it. Back away to win some distance.</p>
     setTimeout(function () { flashEl.style.transition = "opacity 1.4s ease-in"; flashEl.style.opacity = "0.18"; }, 600);
     shakeT = 1.1;
   }
+  var scareEl = null;
+  function loadScare() {
+    if (scareEl || !AC) return;
+    try {
+      scareEl = new Audio("kymlinge-jumpscare.mp3"); scareEl.preload = "auto";
+      var src = AC.createMediaElementSource(scareEl), g = AC.createGain(); g.gain.value = 1.0; src.connect(g); g.connect(master);
+    } catch (e) { scareEl = null; }
+  }
   function jumpSound() {
+    if (musicGain && AC) musicGain.gain.setTargetAtTime(0.06, AC.currentTime, 0.05);
+    if (scareEl && soundOn) { try { scareEl.currentTime = 0; scareEl.play().catch(function () {}); thump(0.7, 55, 0.6); return; } catch (e) {} }
     thump(1.0, 70, 0.9); thump(0.8, 38, 1.2);
     burst("bandpass", 2200, 1.2, 0.9, 0.9); burst("highpass", 3500, 0.7, 0.7, 0.6); burst("lowpass", 300, 0.7, 0.9, 1.2);
     if (!AC || !soundOn) return;
@@ -1316,7 +1326,7 @@ Look at it to freeze it. Back away to win some distance.</p>
       riser = AC.createGain(); riser.gain.value = 0;
       riserOsc = AC.createOscillator(); riserOsc.type = "sine"; riserOsc.frequency.value = 800;
       riserOsc.connect(riser); riser.connect(master); riserOsc.start();
-      startMusic();
+      startMusic(); loadScare();
     } catch (e) { AC = null; }
   }
   // Background music: loops under everything, swelling a little as the entity closes in.

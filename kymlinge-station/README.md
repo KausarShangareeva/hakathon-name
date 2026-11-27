@@ -28,4 +28,4 @@ The final character is loaded from `wraith.glb`, `wraith_walk.glb` and `wraith_r
 
 ## Music
 
-`kymlinge-music.mp3` loops as background music. It starts on the first key press or tap, and the Sound button mutes it with everything else.
+`kymlinge-jumpscare.mp3` plays when the entity catches you. `kymlinge-music.mp3` loops as background music. It starts on the first key press or tap, and the Sound button mutes it with everything else.
