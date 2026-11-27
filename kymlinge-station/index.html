@@ -256,12 +256,67 @@ Look at it to freeze it. Back away to win some distance.</p>
       }
     };
   }
-  var wallTex = canvasTex(256, 256, tiles("#66756d", "#2c3731", 4, 0.05));
-  var floorTex = canvasTex(256, 256, tiles("#4f5b54", "#252e29", 2, 0.05));
-  var ceilTex = canvasTex(256, 256, tiles("#2c3530", "#171d1a", 2, 0.03));
-  var wallMat = new THREE.MeshStandardMaterial({ map: wallTex, roughness: 0.95, metalness: 0 });
-  var floorMat = new THREE.MeshStandardMaterial({ map: floorTex, roughness: 0.55, metalness: 0.1 });
+  // Raw board-formed concrete, like the unopened Kymlinge station: plank marks, tie holes, water stains.
+  function concrete(base, boards, ties, stains) {
+    return function (c, w, h) {
+      var i, x, y;
+      c.fillStyle = base; c.fillRect(0, 0, w, h);
+      for (i = 0; i < 1600; i++) {
+        c.fillStyle = (Math.random() < 0.5 ? "rgba(255,255,255," : "rgba(0,0,0,") + (Math.random() * 0.07).toFixed(3) + ")";
+        c.fillRect(Math.random() * w, Math.random() * h, 1 + Math.random() * 3, 1 + Math.random() * 3);
+      }
+      if (boards) {
+        for (x = 0; x < w; x += 16) {
+          c.fillStyle = "rgba(0,0,0," + (0.05 + Math.random() * 0.09).toFixed(3) + ")";
+          c.fillRect(x + Math.random() * 3, 0, 1 + Math.random() * 2, h);
+          c.fillStyle = "rgba(255,255,255," + (Math.random() * 0.05).toFixed(3) + ")";
+          c.fillRect(x + 5, 0, 7, h);
+        }
+        for (i = 0; i < 14; i++) {
+          c.fillStyle = "rgba(0,0,0,0.16)";
+          c.fillRect(Math.floor(Math.random() * 16) * 16, Math.random() * h, 16, 1.5);
+        }
+      }
+      if (ties) {
+        [64, 192].forEach(function (gx) { [64, 192].forEach(function (gy) {
+          c.fillStyle = "rgba(0,0,0,0.4)"; c.beginPath(); c.arc(gx, gy, 3.2, 0, 6.3); c.fill();
+          c.strokeStyle = "rgba(0,0,0,0.12)"; c.lineWidth = 2; c.beginPath(); c.arc(gx, gy, 7, 0, 6.3); c.stroke();
+        }); });
+      }
+      for (i = 0; i < stains; i++) {
+        x = Math.random() * w; y = Math.random() * h * 0.5;
+        var len = h * (0.25 + Math.random() * 0.6), g = c.createLinearGradient(0, y, 0, y + len);
+        g.addColorStop(0, "rgba(25,30,24," + (0.05 + Math.random() * 0.14).toFixed(3) + ")"); g.addColorStop(1, "rgba(25,30,24,0)");
+        c.fillStyle = g; c.fillRect(x, y, 4 + Math.random() * 22, len);
+      }
+    };
+  }
+  var wallTex = canvasTex(256, 256, concrete("#6d6b64", true, true, 9));
+  var floorTex = canvasTex(256, 256, concrete("#5d5b56", false, false, 4));
+  var ceilTex = canvasTex(256, 256, concrete("#3b3a37", true, false, 3));
+  var wallMat = new THREE.MeshStandardMaterial({ map: wallTex, roughness: 0.96, metalness: 0 });
+  var floorMat = new THREE.MeshStandardMaterial({ map: floorTex, roughness: 0.7, metalness: 0.05 });
   var ceilMat = new THREE.MeshStandardMaterial({ map: ceilTex, roughness: 1, metalness: 0 });
+  var woodMat2 = new THREE.MeshStandardMaterial({ color: 0x8a6b45, roughness: 0.9, emissive: 0x100a05 });
+  var puddleMat = new THREE.MeshStandardMaterial({ color: 0x080c0d, roughness: 0.04, metalness: 0.7, transparent: true, opacity: 0.88 });
+  var tubeBodyMat = new THREE.MeshStandardMaterial({ color: 0x3a3c3a, roughness: 0.8 });
+  var tubeDeadMat = new THREE.MeshStandardMaterial({ color: 0x1b2420, roughness: 0.3, emissive: 0x070b09 });
+  var tubeLitMat = new THREE.MeshBasicMaterial({ color: 0x9fb8aa });
+  var boxGeo = new THREE.BoxGeometry(1, 1, 1);
+  // The grey steel door with graffiti from the stairwell photo.
+  function doorTexture() {
+    var t = canvasTex(128, 256, function (c, w, h) {
+      c.fillStyle = "#7b858d"; c.fillRect(0, 0, w, h);
+      for (var i = 0; i < 500; i++) { c.fillStyle = "rgba(" + (Math.random() < 0.5 ? "255,255,255" : "0,0,0") + "," + (Math.random() * 0.08).toFixed(3) + ")"; c.fillRect(Math.random() * w, Math.random() * h, 2, 2); }
+      c.strokeStyle = "rgba(0,0,0,0.35)"; c.lineWidth = 3; c.strokeRect(2, 2, w - 4, h - 4);
+      c.fillStyle = "rgba(15,18,20,0.75)"; c.font = "bold 22px Arial"; c.save(); c.translate(18, 70); c.rotate(-0.12); c.fillText("KAMO", 0, 0); c.restore();
+      c.font = "bold 16px Arial"; c.fillText("WOMBS", 24, 112); c.fillText("SÖTGN", 20, 150);
+      c.fillStyle = "#d8d27a"; c.fillRect(66, 170, 22, 22);
+    });
+    t.wrapS = t.wrapT = THREE.ClampToEdgeWrapping;
+    return t;
+  }
+  var doorTex = doorTexture();
 
   /* ---------- Language that goes wrong ---------- */
   var NAMES = ["T-Centralen", "Slussen", "Gamla stan", "Hötorget", "Rådhuset", "Fridhemsplan", "Odenplan", "Mariatorget", "Hornstull", "Stadion", "Östermalmstorg", "Zinkensdamm"];
@@ -531,7 +586,7 @@ Look at it to freeze it. Back away to win some distance.</p>
     walls.instanceMatrix.needsUpdate = true;
     levelGroup.add(walls);
 
-    floorTex.repeat.set(gw, gh); ceilTex.repeat.set(gw, gh);
+    floorTex.repeat.set(gw / 3, gh / 3); ceilTex.repeat.set(gw / 2, gh / 2);
     var fl = new THREE.Mesh(new THREE.PlaneGeometry(gw * CELL, gh * CELL), floorMat);
     fl.rotation.x = -Math.PI / 2; fl.position.set(gw * CELL / 2, 0, gh * CELL / 2); levelGroup.add(fl);
     var ce = new THREE.Mesh(new THREE.PlaneGeometry(gw * CELL, gh * CELL), ceilMat);
@@ -568,7 +623,7 @@ Look at it to freeze it. Back away to win some distance.</p>
       var dx = DIRS[i][0], dz = DIRS[i][1];
       if (grid[exit[1] + dz][exit[0] + dx] === 1) {
         var rotY = Math.atan2(-dx, -dz);
-        var door = new THREE.Mesh(new THREE.PlaneGeometry(1.7, 2.6), new THREE.MeshBasicMaterial({ color: 0xc8ffe0 }));
+        var door = new THREE.Mesh(new THREE.PlaneGeometry(1.7, 2.6), new THREE.MeshStandardMaterial({ map: doorTex, roughness: 0.6, metalness: 0.3, emissive: 0x0e2a1a }));
         door.position.set(exitPos.x + dx * (CELL / 2 - 0.03), 1.3, exitPos.z + dz * (CELL / 2 - 0.03));
         door.rotation.y = rotY; levelGroup.add(door);
         var top = new THREE.Mesh(new THREE.PlaneGeometry(1.7, 0.5), new THREE.MeshBasicMaterial({ map: st.up }));
@@ -578,6 +633,41 @@ Look at it to freeze it. Back away to win some distance.</p>
       }
     }
     lightSrc.push({ x: exitPos.x, y: 2.2, z: exitPos.z });
+    }
+
+    // Props from the real station: wooden barriers along the walls, puddles, dead fluorescent tubes.
+    var pcount = 0;
+    for (z = 1; z < gh - 1; z++) for (x = 1; x < gw - 1; x++) {
+      if (grid[z][x] !== 0) continue;
+      var cx0 = (x + 0.5) * CELL, cz0 = (z + 0.5) * CELL, isExit = x === exit[0] && z === exit[1];
+      var r1 = Math.random();
+      if (r1 < 0.2) {
+        var di2 = Math.floor(Math.random() * 4), qx = DIRS[di2][0], qz = DIRS[di2][1];
+        if (grid[z + qz][x + qx] === 1 && !isExit) {
+          var bar = new THREE.Group();
+          var rail = new THREE.Mesh(boxGeo, woodMat2); rail.scale.set(2.3, 0.1, 0.16); rail.position.y = 1.05; bar.add(rail);
+          var rail2 = new THREE.Mesh(boxGeo, woodMat2); rail2.scale.set(2.3, 0.08, 0.1); rail2.position.y = 0.55; bar.add(rail2);
+          [-1, 1].forEach(function (sd) { var po = new THREE.Mesh(boxGeo, woodMat2); po.scale.set(0.12, 1.1, 0.12); po.position.set(sd * 1.05, 0.55, 0); bar.add(po); });
+          var br = new THREE.Mesh(boxGeo, woodMat2); br.scale.set(0.07, 1.25, 0.07); br.position.set(0.4, 0.55, 0); br.rotation.z = 0.7; bar.add(br);
+          bar.position.set(cx0 + qx * (CELL / 2 - 0.2), 0, cz0 + qz * (CELL / 2 - 0.2));
+          bar.rotation.y = Math.atan2(qx, qz) + Math.PI / 2;
+          levelGroup.add(bar);
+        }
+      } else if (r1 < 0.34) {
+        var pw = 0.9 + Math.random() * 1.2, pd = 0.8 + Math.random() * 1.0;
+        var pud = new THREE.Mesh(new THREE.CircleGeometry(0.5, 20), puddleMat);
+        pud.rotation.x = -Math.PI / 2; pud.scale.set(pw, pd, 1);
+        pud.position.set(cx0 + (Math.random() - 0.5) * 1.2, 0.012, cz0 + (Math.random() - 0.5) * 1.2);
+        levelGroup.add(pud);
+      }
+      if (Math.random() < 0.3) {
+        var tb = new THREE.Group(), lit = Math.random() < 0.18;
+        var hs = new THREE.Mesh(boxGeo, tubeBodyMat); hs.scale.set(1.3, 0.07, 0.16); tb.add(hs);
+        var tu = new THREE.Mesh(boxGeo, lit ? tubeLitMat : tubeDeadMat); tu.scale.set(1.2, 0.04, 0.09); tu.position.y = -0.05; tb.add(tu);
+        tb.position.set(cx0 + (Math.random() - 0.5) * 0.6, WALL_H - 0.07, cz0 + (Math.random() - 0.5) * 0.6);
+        tb.rotation.y = Math.random() < 0.5 ? 0 : Math.PI / 2;
+        levelGroup.add(tb);
+      }
     }
 
     // station name plates
