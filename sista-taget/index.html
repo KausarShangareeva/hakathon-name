@@ -1,0 +1,1062 @@
+<title>Sista Tåget</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo+Narrow:wght@600;700&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<style>
+/* Layout concept: one 3D view with the rules in a status bar beneath it. The only light is exit-sign green. */
+:root {
+  --void: #030504;
+  --ink: #0a100c;
+  --line: #1b2a21;
+  --green: #2bff88;
+  --green-rgb: 43, 255, 136;
+  --green-dim: #14803f;
+  --sign: #12c46a;
+  --sign-ink: #02150a;
+  --pale: #dfe7e2;
+  --text: #8fa99b;
+  --text-strong: #e3efe8;
+  --alert: #ff5a4d;
+  --font-sign: "Archivo Narrow", "Arial Narrow", Arial, sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, Menlo, Consolas, monospace;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+html, body { background: var(--void); }
+body {
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-size: 14px;
+  line-height: 1.5;
+  padding-block: 20px 28px;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+}
+.wrap { max-width: 920px; margin: 0 auto; display: flex; flex-direction: column; gap: 14px; }
+header { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 4px 16px; }
+h1 {
+  margin: 0; font-family: var(--font-sign); font-weight: 700; font-size: 22px;
+  letter-spacing: 0.14em; text-transform: uppercase; color: var(--green);
+  text-shadow: 0 0 14px rgba(var(--green-rgb), 0.45);
+}
+.sub { margin: 0; font-size: 12px; letter-spacing: 0.04em; flex: 1 1 260px; }
+.ghost {
+  min-height: 44px; padding: 0 14px; background: transparent; color: var(--text);
+  border: 1px solid var(--line); font-family: var(--font-mono); font-size: 12px;
+  letter-spacing: 0.08em; text-transform: uppercase; cursor: pointer;
+}
+.ghost:hover { color: var(--text-strong); border-color: var(--green-dim); }
+
+.stage { border: 1px solid var(--line); background: var(--ink); overflow: hidden; user-select: none; -webkit-user-select: none; }
+.view { position: relative; aspect-ratio: 16 / 9; background: #000; touch-action: none; cursor: grab; }
+@media (max-width: 560px) { .view { aspect-ratio: 3 / 4; } }
+#gl { position: absolute; inset: 0; }
+#gl canvas { display: block; width: 100%; height: 100%; }
+.lid {
+  position: absolute; inset: 0; pointer-events: none; opacity: 0;
+  background: radial-gradient(ellipse at center, #1c0605 0%, #000 78%);
+}
+.vig {
+  position: absolute; inset: 0; pointer-events: none;
+  background: radial-gradient(ellipse at center, rgba(0,0,0,0) 38%, rgba(0,0,0,0.9) 100%);
+}
+.hud {
+  position: absolute; top: 10px; left: 12px; right: 12px;
+  display: flex; justify-content: space-between; gap: 12px;
+  font-size: 12px; letter-spacing: 0.08em; text-transform: uppercase;
+  color: var(--text-strong); pointer-events: none;
+}
+.overlay {
+  position: absolute; inset: 0;
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 10px; text-align: center; padding: 24px;
+  background: rgba(3, 5, 4, 0.76); pointer-events: none;
+}
+.overlay p { margin: 0; max-width: 52ch; }
+.o-title { font-family: var(--font-sign); font-weight: 700; font-size: clamp(20px, 4.4vw, 30px); color: var(--text-strong); letter-spacing: 0.02em; text-wrap: balance; }
+.o-body { color: var(--text-strong); font-size: 14px; line-height: 1.7; white-space: pre-line; }
+.o-cta { color: var(--green); font-size: 12px; letter-spacing: 0.12em; text-transform: uppercase; }
+.dir { position: absolute; left: 50%; bottom: 14px; width: 60px; height: 60px; margin-left: -30px; pointer-events: none; opacity: 0; }
+.dir i { position: absolute; inset: 0; display: block; border: 1px solid rgba(255, 90, 77, 0.35); border-radius: 50%; }
+.dir i::before {
+  content: ""; position: absolute; left: 50%; top: -8px; margin-left: -9px;
+  border-left: 9px solid transparent; border-right: 9px solid transparent; border-bottom: 18px solid var(--alert);
+}
+.dir span { position: absolute; left: 0; right: 0; top: 50%; transform: translateY(-50%); text-align: center; font-size: 11px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--alert); }
+
+.choices { display: flex; flex-wrap: wrap; justify-content: center; gap: 10px; margin-top: 6px; pointer-events: auto; }
+.choices .ghost { min-height: 48px; padding: 0 18px; font-size: 13px; color: var(--text-strong); border-color: var(--green-dim); background: rgba(3, 5, 4, 0.9); }
+#huntBtn { border-color: var(--alert); color: var(--alert); }
+.panel { display: flex; flex-direction: column; gap: 12px; padding: 12px; border-top: 1px solid var(--line); background: var(--void); }
+.status { display: flex; justify-content: center; }
+.status span {
+  display: inline-block; padding: 6px 16px; text-align: center;
+  font-family: var(--font-sign); font-weight: 700; font-size: 18px;
+  letter-spacing: 0.12em; text-transform: uppercase;
+  border: 1px solid var(--green-dim); color: var(--green);
+}
+.status[data-mode="closed"] span { border-color: var(--alert); color: var(--alert); }
+.status[data-mode="forced"] span { border-color: var(--alert); background: var(--alert); color: var(--sign-ink); }
+.meters { display: grid; grid-template-columns: 1fr 1fr; gap: 8px 24px; }
+.meter { display: flex; align-items: center; gap: 10px; font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--text-strong); }
+.meter > span:first-child { flex: none; width: 108px; }
+.meter .track { flex: 1; height: 8px; background: var(--line); }
+.meter .fill { display: block; height: 100%; width: 0; background: var(--green); }
+.meter.hot .fill { background: var(--alert); }
+@media (max-width: 560px) { .meters { grid-template-columns: 1fr; } }
+
+.controls { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.ctl {
+  min-height: 64px; border: 1px solid var(--green-dim); background: transparent; color: var(--green);
+  font-family: var(--font-sign); font-weight: 700; font-size: 20px; letter-spacing: 0.2em; text-transform: uppercase;
+  cursor: pointer; touch-action: none; user-select: none; -webkit-user-select: none;
+  transition: background 0.08s, color 0.08s;
+}
+.ctl.down { background: var(--green); color: var(--sign-ink); }
+#blinkBtn { border-color: var(--alert); color: var(--alert); }
+#blinkBtn.down { background: var(--alert); color: var(--sign-ink); }
+.ctl:focus-visible, .ghost:focus-visible, .view:focus-visible { outline: 2px solid var(--green); outline-offset: 3px; }
+.hint { margin: 0; font-size: 12px; color: var(--text); }
+@media (prefers-reduced-motion: reduce) { .ctl { transition: none; } }
+</style>
+
+<main class="wrap">
+  <header>
+    <h1>Sista Tåget</h1>
+    <p class="sub">Find the exit. Every moment you look away from it, it gets closer.</p>
+    <button class="ghost" id="soundBtn" type="button" aria-pressed="true">Sound on</button>
+  </header>
+
+  <div class="stage" id="stage">
+    <div class="view" id="view">
+      <div id="gl"></div>
+      <div class="vig" id="vig"></div>
+      <div class="lid" id="lid"></div>
+      <div class="dir" id="dir" aria-hidden="true"><i id="dirArrow"></i><span>It</span></div>
+      <div class="hud">
+        <span id="levelLabel">Level 1</span>
+        <span id="bestLabel">Best 0</span>
+      </div>
+      <div class="overlay" id="overlay">
+        <p class="o-title" id="oTitle">You fell asleep on the last train.</p>
+        <p class="o-body" id="oBody">Something long dead walks this station. Find the exit.
+Signs only read when you look straight at them, and it moves whenever you are not looking at it.
+Look at it to freeze it. Back away to win some distance.</p>
+        <p class="o-cta" id="oCta">Press space or tap to start</p>
+        <div class="choices" id="choices" hidden>
+          <button class="ghost" id="leaveBtn" type="button">Leave the station</button>
+          <button class="ghost" id="huntBtn" type="button">Go back inside</button>
+        </div>
+      </div>
+    </div>
+    <div class="panel">
+      <div class="status" id="status" data-mode="open"><span id="statusText">Ready</span></div>
+      <div class="meters">
+        <div class="meter" id="strainMeter"><span>Eye strain</span><span class="track"><i class="fill" id="strainFill"></i></span></div>
+        <div class="meter" id="gapMeter"><span>Distance to it</span><span class="track"><i class="fill" id="gapFill"></i></span></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="controls">
+    <button class="ctl" id="walkBtn" type="button">Hold to walk</button>
+    <button class="ctl" id="blinkBtn" type="button">Hold to blink</button>
+  </div>
+  <p class="hint">Move: W A S D or arrow keys. Look: drag the view. Blink: hold Space. On a touch screen, hold Walk, hold Blink, and drag the view to look.</p>
+</main>
+
+<script>
+(function () {
+  "use strict";
+
+  var CELL = 3, WALL_H = 3.2, EYE = 1.6, RAD = 0.35, SIGN_Y = 2.6;
+  var WALK = 3.2, FORCED = 0.9, REST = 50;
+  var FONT = '"Archivo Narrow", Arial, sans-serif';
+
+  var $ = function (id) { return document.getElementById(id); };
+  var el = {
+    view: $("view"), gl: $("gl"), lid: $("lid"), vig: $("vig"),
+    overlay: $("overlay"), oTitle: $("oTitle"), oBody: $("oBody"), oCta: $("oCta"),
+    level: $("levelLabel"), best: $("bestLabel"),
+    status: $("status"), statusText: $("statusText"),
+    fill: $("strainFill"), gapFill: $("gapFill"), sMeter: $("strainMeter"), gMeter: $("gapMeter"),
+    walkBtn: $("walkBtn"), blinkBtn: $("blinkBtn"), soundBtn: $("soundBtn"),
+    dir: $("dir"), dirArrow: $("dirArrow"),
+    choices: $("choices"), leaveBtn: $("leaveBtn"), huntBtn: $("huntBtn")
+  };
+  function fail(msg) {
+    el.oTitle.textContent = "Can't start";
+    el.oBody.textContent = msg; el.oCta.textContent = "";
+    el.overlay.hidden = false;
+  }
+  if (!window.THREE) { fail("The 3D library did not load. Check your connection and reload."); return; }
+  var THREE = window.THREE;
+  var RM = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+  /* ---------- Renderer, scene ---------- */
+  var renderer;
+  try {
+    renderer = new THREE.WebGLRenderer({ antialias: true });
+  } catch (e) { fail("This browser could not start WebGL."); return; }
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.5));
+  renderer.outputEncoding = THREE.sRGBEncoding;
+  renderer.setClearColor(0x000000);
+  el.gl.appendChild(renderer.domElement);
+
+  var scene = new THREE.Scene();
+  scene.fog = new THREE.FogExp2(0x000000, 0.07);
+  var camera = new THREE.PerspectiveCamera(72, 16 / 9, 0.1, 60);
+  camera.rotation.order = "YXZ";
+  scene.add(camera);
+  scene.add(new THREE.AmbientLight(0x1f3027, 1.0));
+
+  var pool = [];
+  for (var li = 0; li < 8; li++) {
+    var pl = new THREE.PointLight(0x2bff88, 2.2, 13, 1.6);
+    pl.position.set(0, -50, 0); scene.add(pl); pool.push(pl);
+  }
+
+  function resize() {
+    var w = el.view.clientWidth, h = el.view.clientHeight;
+    if (!w || !h) return;
+    renderer.setSize(w, h, false);
+    camera.aspect = w / h; camera.updateProjectionMatrix();
+  }
+  if (window.ResizeObserver) new ResizeObserver(resize).observe(el.view);
+  window.addEventListener("resize", resize);
+  resize();
+
+  /* ---------- Textures and materials ---------- */
+  function canvasTex(w, h, draw) {
+    var c = document.createElement("canvas"); c.width = w; c.height = h;
+    draw(c.getContext("2d"), w, h);
+    var t = new THREE.CanvasTexture(c);
+    t.encoding = THREE.sRGBEncoding;
+    t.wrapS = t.wrapT = THREE.RepeatWrapping;
+    t.anisotropy = 4;
+    return t;
+  }
+  function tiles(base, grout, n, speck) {
+    return function (c, w, h) {
+      c.fillStyle = base; c.fillRect(0, 0, w, h);
+      for (var i = 0; i < 90; i++) {
+        c.fillStyle = "rgba(255,255,255," + (Math.random() * speck) + ")";
+        c.fillRect(Math.random() * w, Math.random() * h, 6 + Math.random() * 24, 6 + Math.random() * 24);
+      }
+      c.strokeStyle = grout; c.lineWidth = 3;
+      for (var k = 0; k <= n; k++) {
+        c.beginPath(); c.moveTo(k * w / n, 0); c.lineTo(k * w / n, h); c.stroke();
+        c.beginPath(); c.moveTo(0, k * h / n); c.lineTo(w, k * h / n); c.stroke();
+      }
+    };
+  }
+  var wallTex = canvasTex(256, 256, tiles("#66756d", "#2c3731", 4, 0.05));
+  var floorTex = canvasTex(256, 256, tiles("#4f5b54", "#252e29", 2, 0.05));
+  var ceilTex = canvasTex(256, 256, tiles("#2c3530", "#171d1a", 2, 0.03));
+  var wallMat = new THREE.MeshStandardMaterial({ map: wallTex, roughness: 0.95, metalness: 0 });
+  var floorMat = new THREE.MeshStandardMaterial({ map: floorTex, roughness: 0.55, metalness: 0.1 });
+  var ceilMat = new THREE.MeshStandardMaterial({ map: ceilTex, roughness: 1, metalness: 0 });
+
+  /* ---------- Language that goes wrong ---------- */
+  var NAMES = ["T-Centralen", "Slussen", "Gamla stan", "Hötorget", "Rådhuset", "Fridhemsplan", "Odenplan", "Mariatorget", "Hornstull", "Stadion", "Östermalmstorg", "Zinkensdamm"];
+  function corrupt(s, p) {
+    if (p <= 0) return s;
+    var junk = "ÅÄÖØÞXZ#?", out = "";
+    for (var k = 0; k < s.length; k++) {
+      var ch = s[k], r = Math.random();
+      if (ch === " " || ch === "-") { out += ch; continue; }
+      if (r < p * 0.12) out += junk[Math.floor(Math.random() * junk.length)];
+      else if (r < p * 0.2) out += ch + ch;
+      else if (r < p * 0.26 && k < s.length - 1) { out += s[k + 1] + ch; k++; }
+      else out += ch;
+    }
+    return out;
+  }
+  function signTexture(kind, text) {
+    return canvasTex(256, 96, function (c, w, h) {
+      c.fillStyle = "#12c46a"; c.fillRect(0, 0, w, h);
+      c.strokeStyle = "#02150a"; c.lineWidth = 5; c.strokeRect(4, 4, w - 8, h - 8);
+      c.fillStyle = "#02150a"; c.font = "700 40px " + FONT; c.textAlign = "left"; c.textBaseline = "middle";
+      c.fillText(text, 18, h / 2 + 2, 150);
+      if (kind === "blank") return;
+      c.save(); c.translate(w - 52, h / 2);
+      if (kind === "left") c.rotate(-Math.PI / 2); else if (kind === "right") c.rotate(Math.PI / 2);
+      c.beginPath(); c.moveTo(0, -26); c.lineTo(22, 0); c.lineTo(8, 0); c.lineTo(8, 26); c.lineTo(-8, 26); c.lineTo(-8, 0); c.lineTo(-22, 0); c.closePath();
+      c.fill(); c.restore();
+    });
+  }
+  function drawPlate(c, w, h, name) {
+    c.fillStyle = "#1b2420"; c.fillRect(0, 0, w, h);
+    c.strokeStyle = "#14803f"; c.lineWidth = 3; c.strokeRect(3, 3, w - 6, h - 6);
+    c.fillStyle = "#e3efe8"; c.font = "700 34px " + FONT; c.textAlign = "center"; c.textBaseline = "middle";
+    c.fillText(name, w / 2, h / 2 + 2, w - 24);
+  }
+  function plateTexture(name) {
+    return canvasTex(256, 80, function (c, w, h) { drawPlate(c, w, h, name); });
+  }
+
+  /* ---------- The entity (original design) ---------- */
+  var ent = new THREE.Group();
+  // A draugr: the swollen, death-blue Norse dead, in the rags of its burial clothes.
+  var skinMat = new THREE.MeshStandardMaterial({ color: 0x8da3b3, roughness: 0.85, emissive: 0x16222c });
+  var coatMat = new THREE.MeshStandardMaterial({ color: 0x2b2f33, roughness: 0.95, emissive: 0x08090a });
+  var voidMat = new THREE.MeshBasicMaterial({ color: 0x000000 });
+  var glareMat = new THREE.MeshBasicMaterial({ color: 0xbfefff });
+  [-1, 1].forEach(function (s) {
+    var leg = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.055, 1.15, 8), skinMat);
+    leg.position.set(s * 0.12, 0.575, 0); ent.add(leg);
+  });
+  var coatM = new THREE.Mesh(new THREE.CylinderGeometry(0.22, 0.36, 1.25, 12), coatMat);
+  coatM.position.y = 1.15; ent.add(coatM);
+  var belly = new THREE.Mesh(new THREE.SphereGeometry(0.3, 14, 10), skinMat);
+  belly.scale.set(1.15, 0.95, 0.95); belly.position.set(0, 1.28, 0.06); ent.add(belly);
+  var neck = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.06, 0.35, 8), skinMat);
+  neck.position.y = 1.9; ent.add(neck);
+  var headG = new THREE.Group(); headG.position.set(0, 1.95, 0); ent.add(headG);
+  var head = new THREE.Mesh(new THREE.SphereGeometry(0.17, 16, 12), skinMat);
+  head.scale.set(0.85, 1.35, 0.9); head.position.y = 0.25; headG.add(head);
+  [-1, 1].forEach(function (s) {
+    var eye = new THREE.Mesh(new THREE.SphereGeometry(1, 8, 6), voidMat);
+    eye.scale.set(0.035, 0.06, 0.02); eye.position.set(s * 0.055, 0.28, 0.145); headG.add(eye);
+    var glare = new THREE.Mesh(new THREE.SphereGeometry(1, 6, 4), glareMat);
+    glare.scale.set(0.012, 0.02, 0.01); glare.position.set(s * 0.055, 0.28, 0.16); headG.add(glare);
+  });
+  var arms = [];
+  [-1, 1].forEach(function (s) {
+    var g = new THREE.Group(); g.position.set(s * 0.26, 1.72, 0);
+    var arm = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.03, 1.3, 6), skinMat);
+    arm.position.y = -0.65; g.add(arm);
+    var hand = new THREE.Mesh(new THREE.SphereGeometry(0.05, 8, 6), skinMat);
+    hand.position.y = -1.32; g.add(hand);
+    ent.add(g); arms.push(g);
+  });
+  var entLight = new THREE.PointLight(0xdfe7e2, 0.9, 7, 2);
+  entLight.position.set(0, 1.6, 0.6); ent.add(entLight);
+  ent.visible = false;
+  scene.add(ent);
+  var poseT = 0;
+  function pose() {
+    headG.rotation.z = Math.sin(poseT * 1.3) * 0.5;
+    headG.rotation.x = Math.sin(poseT * 0.8 + 2) * 0.25;
+    arms[0].rotation.z = 0.08 + Math.sin(poseT * 0.7) * 0.35;
+    arms[1].rotation.z = -0.08 - Math.sin(poseT * 0.9 + 1) * 0.35;
+  }
+
+  /* ---------- Level ---------- */
+  var level = 1, best = 0;
+  try { best = parseInt(localStorage.getItem("sista-best-3d") || "0", 10) || 0; } catch (e) {}
+  var gw = 0, gh = 0, grid = [], levelGroup = null, lightSrc = [], exitPos = { x: 0, z: 0 };
+  var spawn = { x: 0, z: 0 }, startPos = { x: 0, z: 0 }, texKeep = [];
+  var DIRS = [[1, 0], [-1, 0], [0, 1], [0, -1]];
+
+  function solid(x, z) {
+    var cx = Math.floor(x / CELL), cz = Math.floor(z / CELL);
+    if (cx < 0 || cz < 0 || cx >= gw || cz >= gh) return true;
+    return grid[cz][cx] === 1;
+  }
+  function bfs(sx, sz) {
+    var d = [], par = [], z, x;
+    for (z = 0; z < gh; z++) { d[z] = []; par[z] = []; for (x = 0; x < gw; x++) { d[z][x] = -1; par[z][x] = null; } }
+    var q = [[sx, sz]], qi = 0; d[sz][sx] = 0;
+    while (qi < q.length) {
+      var c = q[qi++];
+      for (var k = 0; k < 4; k++) {
+        var nx = c[0] + DIRS[k][0], nz = c[1] + DIRS[k][1];
+        if (nx < 0 || nz < 0 || nx >= gw || nz >= gh) continue;
+        if (grid[nz][nx] !== 0 || d[nz][nx] !== -1) continue;
+        d[nz][nx] = d[c[1]][c[0]] + 1; par[nz][nx] = c; q.push([nx, nz]);
+      }
+    }
+    return { d: d, par: par };
+  }
+  function disposeGroup(g) {
+    g.traverse(function (o) { if (o.geometry) o.geometry.dispose(); });
+    scene.remove(g);
+  }
+
+  function buildLevel(hunt) {
+    var mw = Math.min(13, 6 + level), mh = Math.min(8, 3 + level), x, z, i;
+    gw = mw * 2 + 1; gh = mh * 2 + 1;
+    grid = [];
+    for (z = 0; z < gh; z++) { grid[z] = []; for (x = 0; x < gw; x++) grid[z][x] = 1; }
+    var vis = [];
+    for (z = 0; z < mh; z++) vis[z] = [];
+    var stack = [[0, 0]]; vis[0][0] = true; grid[1][1] = 0;
+    while (stack.length) {
+      var c = stack[stack.length - 1], nb = [];
+      for (i = 0; i < 4; i++) {
+        var nx = c[0] + DIRS[i][0], ny = c[1] + DIRS[i][1];
+        if (nx >= 0 && ny >= 0 && nx < mw && ny < mh && !vis[ny][nx]) nb.push([nx, ny, DIRS[i]]);
+      }
+      if (!nb.length) { stack.pop(); continue; }
+      var n = nb[Math.floor(Math.random() * nb.length)];
+      grid[2 * c[1] + 1 + n[2][1]][2 * c[0] + 1 + n[2][0]] = 0;
+      grid[2 * n[1] + 1][2 * n[0] + 1] = 0;
+      vis[n[1]][n[0]] = true; stack.push([n[0], n[1]]);
+    }
+    var extra = Math.floor(mw * mh * 0.18);
+    for (i = 0; i < extra; i++) {
+      x = 1 + Math.floor(Math.random() * (gw - 2)); z = 1 + Math.floor(Math.random() * (gh - 2));
+      if (((x & 1) + (z & 1)) === 1 && grid[z][x] === 1) grid[z][x] = 0;
+    }
+    // start room: the platform
+    var cy = Math.floor(gh / 2);
+    for (z = Math.max(1, cy - 2); z <= Math.min(gh - 2, cy + 2); z++) for (x = 1; x <= 5; x++) grid[z][x] = 0;
+    grid[cy - 1][3] = 1; grid[cy + 1][3] = 1;
+    var sx = 2, sz = cy;
+    var b0 = bfs(sx, sz), exit = [sx, sz], maxD = 0;
+    for (z = 0; z < gh; z++) for (x = 0; x < gw; x++) if (b0.d[z][x] > maxD) { maxD = b0.d[z][x]; exit = [x, z]; }
+    var cands = [];
+    for (z = 0; z < gh; z++) for (x = 0; x < gw; x++) {
+      var dd = b0.d[z][x];
+      if (dd >= 9 && dd <= Math.max(9, Math.floor(maxD * 0.55))) cands.push([x, z]);
+    }
+    if (!cands.length) cands.push(exit);
+    var sp = cands[Math.floor(Math.random() * cands.length)];
+    spawn = { x: (sp[0] + 0.5) * CELL, z: (sp[1] + 0.5) * CELL };
+    startPos = { x: (sx + 0.5) * CELL, z: (sz + 0.5) * CELL };
+    exitPos = { x: (exit[0] + 0.5) * CELL, z: (exit[1] + 0.5) * CELL };
+    huntSpawns = [];
+    if (hunt) {
+      var far = [];
+      for (z = 0; z < gh; z++) for (x = 0; x < gw; x++) if (b0.d[z][x] >= 9) far.push([x, z]);
+      for (i = far.length - 1; i > 0; i--) { var jj = Math.floor(Math.random() * (i + 1)), tmp = far[i]; far[i] = far[jj]; far[jj] = tmp; }
+      far.forEach(function (fc) {
+        if (huntSpawns.length >= HUNT_N) return;
+        var okc = huntSpawns.every(function (h) { return Math.abs(h.cx - fc[0]) + Math.abs(h.cz - fc[1]) >= 6; });
+        if (okc) huntSpawns.push({ cx: fc[0], cz: fc[1], x: (fc[0] + 0.5) * CELL, z: (fc[1] + 0.5) * CELL });
+      });
+    }
+
+    // path start -> exit
+    var path = [], cur = exit;
+    while (cur) { path.push(cur); cur = b0.par[cur[1]][cur[0]]; }
+    path.reverse();
+
+    // clear old
+    if (levelGroup) disposeGroup(levelGroup);
+    texKeep.forEach(function (t) { t.dispose(); }); texKeep = [];
+    levelGroup = new THREE.Group(); scene.add(levelGroup);
+    lightSrc = [];
+
+    // walls
+    var wc = [];
+    for (z = 0; z < gh; z++) for (x = 0; x < gw; x++) {
+      if (grid[z][x] !== 1) continue;
+      for (i = 0; i < 4; i++) {
+        var ax = x + DIRS[i][0], az = z + DIRS[i][1];
+        if (ax >= 0 && az >= 0 && ax < gw && az < gh && grid[az][ax] === 0) { wc.push([x, z]); break; }
+      }
+    }
+    var walls = new THREE.InstancedMesh(new THREE.BoxGeometry(CELL, WALL_H, CELL), wallMat, wc.length);
+    var m4 = new THREE.Matrix4();
+    wc.forEach(function (w, k) { m4.makeTranslation((w[0] + 0.5) * CELL, WALL_H / 2, (w[1] + 0.5) * CELL); walls.setMatrixAt(k, m4); });
+    walls.instanceMatrix.needsUpdate = true;
+    levelGroup.add(walls);
+
+    floorTex.repeat.set(gw, gh); ceilTex.repeat.set(gw, gh);
+    var fl = new THREE.Mesh(new THREE.PlaneGeometry(gw * CELL, gh * CELL), floorMat);
+    fl.rotation.x = -Math.PI / 2; fl.position.set(gw * CELL / 2, 0, gh * CELL / 2); levelGroup.add(fl);
+    var ce = new THREE.Mesh(new THREE.PlaneGeometry(gw * CELL, gh * CELL), ceilMat);
+    ce.rotation.x = Math.PI / 2; ce.position.set(gw * CELL / 2, WALL_H, gh * CELL / 2); levelGroup.add(ce);
+
+    // signs
+    var p = Math.max(0, Math.min(1, (level - 2) / 4));
+    signs = []; blankTex = null;
+    if (!hunt) {
+    var exitWord = corrupt("UTGÅNG", p);
+    var st = { up: signTexture("up", exitWord), left: signTexture("left", exitWord), right: signTexture("right", exitWord), blank: signTexture("blank", exitWord) };
+    texKeep.push(st.up, st.left, st.right, st.blank);
+    blankTex = st.blank; signs = [];
+    var sgeo = new THREE.PlaneGeometry(1.5, 0.55);
+    for (i = 1; i < path.length - 1; i++) {
+      var hp = [path[i][0] - path[i - 1][0], path[i][1] - path[i - 1][1]];
+      var hn = [path[i + 1][0] - path[i][0], path[i + 1][1] - path[i][1]];
+      var turn = hp[0] !== hn[0] || hp[1] !== hn[1];
+      if (!turn && i % 3 !== 0) continue;
+      var cross = hp[0] * hn[1] - hp[1] * hn[0];
+      var kind = !turn ? "up" : (cross > 0 ? "right" : "left");
+      var smat = new THREE.MeshBasicMaterial({ map: st.blank, side: THREE.DoubleSide });
+      var sm = new THREE.Mesh(sgeo, smat);
+      var sxw = (path[i][0] + 0.5) * CELL, szw = (path[i][1] + 0.5) * CELL;
+      sm.position.set(sxw, SIGN_Y, szw);
+      sm.rotation.y = Math.atan2(-hp[0], -hp[1]);
+      levelGroup.add(sm);
+      lightSrc.push({ x: sxw, y: SIGN_Y, z: szw });
+      signs.push({ x: sxw, z: szw, mat: smat, tex: st[kind], on: false });
+    }
+
+    // exit door on a solid wall of the exit cell
+    for (i = 0; i < 4; i++) {
+      var dx = DIRS[i][0], dz = DIRS[i][1];
+      if (grid[exit[1] + dz][exit[0] + dx] === 1) {
+        var rotY = Math.atan2(-dx, -dz);
+        var door = new THREE.Mesh(new THREE.PlaneGeometry(1.7, 2.6), new THREE.MeshBasicMaterial({ color: 0xc8ffe0 }));
+        door.position.set(exitPos.x + dx * (CELL / 2 - 0.03), 1.3, exitPos.z + dz * (CELL / 2 - 0.03));
+        door.rotation.y = rotY; levelGroup.add(door);
+        var top = new THREE.Mesh(new THREE.PlaneGeometry(1.7, 0.5), new THREE.MeshBasicMaterial({ map: st.up }));
+        top.position.set(exitPos.x + dx * (CELL / 2 - 0.03), 2.92, exitPos.z + dz * (CELL / 2 - 0.03));
+        top.rotation.y = rotY; levelGroup.add(top);
+        break;
+      }
+    }
+    lightSrc.push({ x: exitPos.x, y: 2.2, z: exitPos.z });
+    }
+
+    // station name plates
+    plates = [];
+    var plated = 0, tries = 0;
+    while (plated < 7 && tries < 200) {
+      tries++;
+      var wx = 1 + Math.floor(Math.random() * (gw - 2)), wz = 1 + Math.floor(Math.random() * (gh - 2));
+      if (grid[wz][wx] !== 1) continue;
+      var di = Math.floor(Math.random() * 4), pdx = DIRS[di][0], pdz = DIRS[di][1];
+      if (grid[wz + pdz][wx + pdx] !== 0) continue;
+      var nm = (p > 0.5 && Math.random() < 0.4) ? "Kymlinge" : NAMES[Math.floor(Math.random() * NAMES.length)];
+      var pt = plateTexture(corrupt(nm, p)); texKeep.push(pt);
+      var pm = new THREE.Mesh(new THREE.PlaneGeometry(1.6, 0.5), new THREE.MeshStandardMaterial({ map: pt, roughness: 0.9 }));
+      pm.position.set((wx + 0.5) * CELL + pdx * (CELL / 2 + 0.01), 1.7, (wz + 0.5) * CELL + pdz * (CELL / 2 + 0.01));
+      pm.rotation.y = Math.atan2(pdx, pdz);
+      levelGroup.add(pm); plated++;
+      plates.push({ x: (wx + 0.5) * CELL + pdx * (CELL / 2), z: (wz + 0.5) * CELL + pdz * (CELL / 2), tex: pt });
+    }
+    updateLights();
+  }
+
+  function updateLights() {
+    var arr = lightSrc.map(function (s) { var dx = s.x - px, dz = s.z - pz; return { s: s, d: dx * dx + dz * dz }; });
+    arr.sort(function (a, b) { return a.d - b.d; });
+    for (var i = 0; i < pool.length; i++) {
+      if (arr[i]) pool[i].position.set(arr[i].s.x, arr[i].s.y - 0.3, arr[i].s.z);
+      else pool[i].position.set(0, -50, 0);
+    }
+  }
+
+  /* ---------- Game state ---------- */
+  var state = "ready";          // ready | play | dead | won
+  var px = 0, pz = 0, yaw = -Math.PI / 2, pitch = 0;
+  var held = false, walkBtn = false, ignoreUntilRelease = false, keys = {};
+  var forced = 0, lid = 0, strain = 0, seen = false;
+  var stateT = 0, walkT = 0, stepT = 0, hbT = 1, lightT = 0, t = 0, cleared = 0;
+  var dmap = null, dmapCx = -1, dmapCz = -1, tgt = null;
+  var signs = [], reading = false, blankTex = null;
+  var plates = [], plateT = 7, ambT = 9;
+  var CREEPY = ["DU ÄR INTE ENSAM", "SOV INTE", "SISTA TÅGET", "INGEN UTGÅNG", "SILVERPILEN", "KYMLINGE", "GENGÅNGARE", "HÖGEN"];
+
+  // A sign only shows its arrow while you look straight at it, which means looking away from the entity.
+  function focusSigns(closed) {
+    var fx = -Math.sin(yaw), fz = -Math.cos(yaw), pick = null, bd = 1e9, i, s;
+    if (!closed) {
+      for (i = 0; i < signs.length; i++) {
+        s = signs[i];
+        var dx = s.x - px, dz = s.z - pz, d = Math.hypot(dx, dz);
+        if (d > 14 || d < 0.5 || d > bd) continue;
+        var ang = Math.acos(Math.max(-1, Math.min(1, (fx * dx + fz * dz) / d)));
+        var va = Math.atan2(SIGN_Y - EYE, d) - pitch;
+        if (ang < 0.2 && Math.abs(va) < 0.24 && los(px, pz, s.x, s.z)) { pick = s; bd = d; }
+      }
+    }
+    for (i = 0; i < signs.length; i++) {
+      s = signs[i];
+      var want = s === pick;
+      if (s.on !== want) { s.on = want; s.mat.map = want ? s.tex : blankTex; }
+    }
+    reading = !!pick;
+  }
+
+  function resetPlayer() {
+    px = startPos.x; pz = startPos.z; yaw = -Math.PI / 2; pitch = 0;
+    forced = 0; lid = 0; strain = 0; seen = false; walkT = 0; stepT = 0; hbT = 1;
+    ent.position.set(spawn.x, 0, spawn.z); ent.rotation.y = 0; ent.visible = true;
+    dmap = null; dmapCx = -1; dmapCz = -1; tgt = null; poseT = Math.random() * 20; pose();
+    updateLights();
+  }
+  function startGame() {
+    if (state === "dead" || state === "end") { level = 1; gmode = "escape"; }
+    else if (state === "won") { level++; }
+    initAudio();
+    clearHunted(); lantern.visible = false;
+    pool.forEach(function (l) { l.visible = true; });
+    el.blinkBtn.textContent = "Hold to blink"; el.choices.hidden = true;
+    buildLevel(false); resetPlayer();
+    state = "play"; held = false; ignoreUntilRelease = true;
+    el.overlay.hidden = true;
+    updateHud();
+  }
+  function pressBlink(v) {
+    if (state === "ready") { if (v) startGame(); return; }
+    if (state === "dead") { if (v && stateT > 0.9) startGame(); return; }
+    if (state === "won") { if (v && stateT > 0.6) startGame(); return; }
+    if (state === "choice") return;
+    if (state === "end") { if (v && stateT > 0.9) startGame(); return; }
+    if (state === "intro") {
+      if (v && stateT > 0.4) { state = "play"; held = false; ignoreUntilRelease = true; el.overlay.hidden = true; }
+      return;
+    }
+    if (ignoreUntilRelease) { if (!v) ignoreUntilRelease = false; return; }
+    held = v;
+    el.blinkBtn.classList.toggle("down", v);
+  }
+  function updateHud() {
+    el.level.textContent = gmode === "hunt" ? "Hunt · second deaths " + caught + "/" + (hunted.length || HUNT_N) : "Level " + level;
+    el.best.textContent = "Best " + best;
+  }
+  function die() {
+    state = "dead"; stateT = 0; held = false; walkBtn = false; lid = 0;
+    el.blinkBtn.classList.remove("down"); el.walkBtn.classList.remove("down");
+    var fx = -Math.sin(yaw), fz = -Math.cos(yaw);
+    ent.position.set(px + fx * 0.95, 0, pz + fz * 0.95);
+    ent.rotation.y = Math.atan2(-fx, -fz); pitch = 0.5;
+    cleared = level - 1;
+    if (cleared > best) { best = cleared; try { localStorage.setItem("sista-best-3d", String(best)); } catch (e) {} }
+    updateHud();
+    el.oTitle.textContent = "It was right behind you.";
+    el.oBody.textContent = "Levels cleared: " + cleared + ". Best: " + best + ".";
+    el.oCta.textContent = "Press space or tap to try again";
+    thump(0.6, 55, 0.5);
+  }
+  function win() {
+    state = "won"; stateT = 0; held = false; walkBtn = false; lid = 0;
+    el.blinkBtn.classList.remove("down"); el.walkBtn.classList.remove("down");
+    if (level > best) { best = level; try { localStorage.setItem("sista-best-3d", String(best)); } catch (e) {} }
+    updateHud();
+    el.oTitle.textContent = "You reached the surface.";
+    if (level >= 3) {
+      state = "choice";
+      el.oBody.textContent = "Cold air. The stairs lead up to the street.\nBehind you, the station is still full of them.";
+      el.oCta.textContent = "";
+    } else {
+      el.oBody.textContent = "Level " + level + " cleared.\nThe next station is bigger.";
+      el.oCta.textContent = "Press space or tap to continue";
+    }
+  }
+
+  /* ---------- Movement and the entity ---------- */
+  function blocked(x, z) { return solid(x - RAD, z - RAD) || solid(x + RAD, z - RAD) || solid(x - RAD, z + RAD) || solid(x + RAD, z + RAD); }
+  function tryMove(dx, dz) {
+    if (!blocked(px + dx, pz)) px += dx;
+    if (!blocked(px, pz + dz)) pz += dz;
+  }
+  function los(x0, z0, x1, z1) {
+    var dx = x1 - x0, dz = z1 - z0, n = Math.ceil(Math.hypot(dx, dz) / 0.25);
+    for (var i = 1; i < n; i++) if (solid(x0 + dx * i / n, z0 + dz * i / n)) return false;
+    return true;
+  }
+  function entitySeen() { return canSee(ent.position.x, ent.position.z, 15); }
+  function canSee(ex, ez, maxD) {
+    var dx = ex - px, dz = ez - pz, d = Math.hypot(dx, dz);
+    if (d > maxD) return false;
+    var fx = -Math.sin(yaw), fz = -Math.cos(yaw);
+    var ang = Math.acos(Math.max(-1, Math.min(1, (fx * dx + fz * dz) / Math.max(d, 0.001))));
+    var vf = camera.fov * Math.PI / 180, hf = 2 * Math.atan(Math.tan(vf / 2) * camera.aspect);
+    if (ang > hf / 2 + 0.05) return false;
+    var va = Math.atan2(1.2 - EYE, d) - pitch;
+    if (Math.abs(va) > vf / 2 + 0.1) return false;
+    return los(px, pz, ex, ez);
+  }
+  function moveEntity(dt) {
+    var ex = ent.position.x, ez = ent.position.z;
+    var ecx = Math.floor(ex / CELL), ecz = Math.floor(ez / CELL);
+    var pcx = Math.floor(px / CELL), pcz = Math.floor(pz / CELL);
+    if (pcx !== dmapCx || pcz !== dmapCz) { dmap = bfs(pcx, pcz).d; dmapCx = pcx; dmapCz = pcz; }
+    if (ecx === pcx && ecz === pcz) { tgt = { x: px, z: pz }; }
+    else if (!tgt || Math.hypot(tgt.x - ex, tgt.z - ez) < 0.05) {
+      var bd = dmap[ecz][ecx], bx = ecx, bz = ecz;
+      for (var k = 0; k < 4; k++) {
+        var nx = ecx + DIRS[k][0], nz = ecz + DIRS[k][1];
+        if (nx < 0 || nz < 0 || nx >= gw || nz >= gh) continue;
+        if (grid[nz][nx] === 0 && dmap[nz][nx] >= 0 && dmap[nz][nx] < bd) { bd = dmap[nz][nx]; bx = nx; bz = nz; }
+      }
+      tgt = { x: (bx + 0.5) * CELL, z: (bz + 0.5) * CELL };
+    }
+    var dx = tgt.x - ex, dz = tgt.z - ez, dist = Math.hypot(dx, dz);
+    var m = Math.min((2.8 + 0.12 * level) * (Math.hypot(ex - px, ez - pz) < 5 ? 1.2 : 1) * dt, dist);
+    if (dist > 0.001) { ent.position.x += dx / dist * m; ent.position.z += dz / dist * m; }
+    ent.rotation.y = Math.atan2(px - ent.position.x, pz - ent.position.z);
+    poseT += dt * 0.9; pose();
+  }
+
+  function stepPlay(dt) {
+    var closed = held || forced > 0;
+    if (forced > 0) { forced -= dt; if (forced <= 0) strain = 30; }
+    var rate = 9 + level * 1.2;
+    if (!closed) { strain += rate * dt; if (strain >= 100) { strain = 100; forced = FORCED; } }
+    else if (forced <= 0) { strain = Math.max(0, strain - REST * dt); }
+
+    var walking = false;
+    if (!closed) {
+      var fw = (keys.KeyW || keys.ArrowUp ? 1 : 0) - (keys.KeyS || keys.ArrowDown ? 1 : 0) + (walkBtn ? 1 : 0);
+      var sd = (keys.KeyD ? 1 : 0) - (keys.KeyA ? 1 : 0);
+      yaw += ((keys.ArrowLeft ? 1 : 0) - (keys.ArrowRight ? 1 : 0)) * 1.9 * dt;
+      fw = Math.max(-1, Math.min(1, fw));
+      var len = Math.hypot(fw, sd);
+      if (len > 0) {
+        var fx = -Math.sin(yaw), fz = -Math.cos(yaw), rx = Math.cos(yaw), rz = -Math.sin(yaw), k = WALK * (fw < 0 ? 0.6 : 1) / Math.max(1, len);
+        tryMove((fx * fw + rx * sd) * k * dt, (fz * fw + rz * sd) * k * dt);
+        walking = true; walkT += dt;
+        stepT -= dt;
+        if (stepT <= 0) { thump(0.07, 110, 0.12); stepT = 0.52; }
+      }
+    }
+
+    seen = !closed && entitySeen();
+    focusSigns(closed);
+    if (!seen) moveEntity(dt);
+
+    var d = Math.hypot(ent.position.x - px, ent.position.z - pz);
+    if (d < 0.9) { die(); return; }
+    if (Math.hypot(exitPos.x - px, exitPos.z - pz) < 1.2) { win(); return; }
+
+    lid += ((closed ? 1 : 0) - lid) * Math.min(1, dt * (closed ? 16 : 9));
+    audioStep(dt, d, !seen);
+    lightT -= dt; if (lightT <= 0) { updateLights(); lightT = 0.12; }
+    plateT -= dt; if (plateT <= 0) { plateT = 4 + Math.random() * 5; rewritePlate(); }
+    ambT -= dt; if (ambT <= 0) { ambT = 14 + Math.random() * 16; ambient(); }
+    return walking;
+  }
+
+  /* ---------- The twist: hunt mode ---------- */
+  var HUNT_N = 3;
+  var gmode = "escape";           // escape | hunt
+  var hunted = [], huntSpawns = [], huntNear = null, caught = 0;
+  var lantern = new THREE.PointLight(0xff7a5a, 1.7, 10, 1.6);
+  lantern.visible = false; camera.add(lantern);
+
+  function poseEntity(h) {
+    h.headG.rotation.z = Math.sin(h.poseT * 1.3) * 0.5;
+    h.headG.rotation.x = Math.sin(h.poseT * 0.8 + 2) * 0.25;
+    h.arms[0].rotation.z = 0.08 + Math.sin(h.poseT * 0.7) * 0.35;
+    h.arms[1].rotation.z = -0.08 - Math.sin(h.poseT * 0.9 + 1) * 0.35;
+  }
+  function makeHunted(x, z) {
+    var g = new THREE.Group();
+    [-1, 1].forEach(function (s) {
+      var leg = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.055, 1.15, 8), skinMat);
+      leg.position.set(s * 0.12, 0.575, 0); g.add(leg);
+    });
+    var cm = new THREE.Mesh(new THREE.CylinderGeometry(0.22, 0.36, 1.25, 12), coatMat);
+    cm.position.y = 1.15; g.add(cm);
+    var bl = new THREE.Mesh(new THREE.SphereGeometry(0.3, 14, 10), skinMat);
+    bl.scale.set(1.15, 0.95, 0.95); bl.position.set(0, 1.28, 0.06); g.add(bl);
+    var nk = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.06, 0.35, 8), skinMat);
+    nk.position.y = 1.9; g.add(nk);
+    var hg = new THREE.Group(); hg.position.set(0, 1.95, 0); g.add(hg);
+    var hd = new THREE.Mesh(new THREE.SphereGeometry(0.17, 16, 12), skinMat);
+    hd.scale.set(0.85, 1.35, 0.9); hd.position.y = 0.25; hg.add(hd);
+    [-1, 1].forEach(function (s) {
+      var ey = new THREE.Mesh(new THREE.SphereGeometry(1, 8, 6), voidMat);
+      ey.scale.set(0.035, 0.06, 0.02); ey.position.set(s * 0.055, 0.28, 0.145); hg.add(ey);
+      var gl = new THREE.Mesh(new THREE.SphereGeometry(1, 6, 4), glareMat);
+      gl.scale.set(0.012, 0.02, 0.01); gl.position.set(s * 0.055, 0.28, 0.16); hg.add(gl);
+    });
+    var am = [];
+    [-1, 1].forEach(function (s) {
+      var ag = new THREE.Group(); ag.position.set(s * 0.26, 1.72, 0);
+      var a = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.03, 1.3, 6), skinMat);
+      a.position.y = -0.65; ag.add(a);
+      var hn = new THREE.Mesh(new THREE.SphereGeometry(0.05, 8, 6), skinMat);
+      hn.position.y = -1.32; ag.add(hn);
+      g.add(ag); am.push(ag);
+    });
+    g.position.set(x, 0, z); scene.add(g);
+    var h = { g: g, headG: hg, arms: am, poseT: Math.random() * 20, tgt: null, alive: true };
+    poseEntity(h);
+    return h;
+  }
+  function clearHunted() {
+    hunted.forEach(function (h) {
+      h.g.traverse(function (o) { if (o.geometry) o.geometry.dispose(); });
+      scene.remove(h.g);
+    });
+    hunted = []; caught = 0; huntNear = null;
+  }
+  function startHunt() {
+    initAudio();
+    gmode = "hunt";
+    clearHunted();
+    buildLevel(true); resetPlayer();
+    ent.visible = false;
+    huntSpawns.forEach(function (s) { var h = makeHunted(s.x, s.z); h.g.rotation.y = Math.random() * 6.28; hunted.push(h); });
+    strain = 0; forced = 0;
+    pool.forEach(function (l) { l.visible = false; });
+    lantern.visible = true;
+    el.blinkBtn.textContent = "Hold to creep";
+    el.choices.hidden = true;
+    state = "intro"; stateT = 0;
+    el.oTitle.textContent = "Now you are the hunter.";
+    el.oBody.textContent = "The dead fear a second death.\nThey run when you look at them, and hold still when you don't.\nCreep up with your eyes closed, or corner them in a dead end. Put all three down.";
+    el.oCta.textContent = "Press space or tap to begin";
+    el.overlay.hidden = false;
+    updateHud();
+  }
+  function finishHunt() {
+    state = "end"; stateT = 0; held = false; walkBtn = false; lid = 0; huntNear = null;
+    el.blinkBtn.classList.remove("down"); el.walkBtn.classList.remove("down");
+    el.oTitle.textContent = "The station is empty.";
+    el.oBody.textContent = "All three have had their second death.\nNow you are the thing waiting in the dark.";
+    el.oCta.textContent = "Press space or tap to play again";
+    el.overlay.hidden = false;
+    thump(0.4, 60, 0.6);
+    updateHud();
+  }
+  function fleeStep(h, dt) {
+    var ex = h.g.position.x, ez = h.g.position.z;
+    var ecx = Math.floor(ex / CELL), ecz = Math.floor(ez / CELL);
+    if (!h.tgt || Math.hypot(h.tgt.x - ex, h.tgt.z - ez) < 0.05) {
+      var bd = dmap[ecz][ecx], bx = ecx, bz = ecz;
+      for (var k = 0; k < 4; k++) {
+        var nx = ecx + DIRS[k][0], nz = ecz + DIRS[k][1];
+        if (nx < 0 || nz < 0 || nx >= gw || nz >= gh || grid[nz][nx] !== 0) continue;
+        if (dmap[nz][nx] > bd) { bd = dmap[nz][nx]; bx = nx; bz = nz; }
+      }
+      h.tgt = { x: (bx + 0.5) * CELL, z: (bz + 0.5) * CELL };
+    }
+    var dx = h.tgt.x - ex, dz = h.tgt.z - ez, dist = Math.hypot(dx, dz);
+    var m = Math.min(2.9 * dt, dist);
+    if (dist > 0.001) {
+      h.g.position.x += dx / dist * m; h.g.position.z += dz / dist * m;
+      h.g.rotation.y = Math.atan2(dx, dz);
+    }
+    h.poseT += dt * 3; poseEntity(h);
+  }
+  function stepHunt(dt) {
+    var closed = held;
+    var fw = (keys.KeyW || keys.ArrowUp ? 1 : 0) - (keys.KeyS || keys.ArrowDown ? 1 : 0) + (walkBtn ? 1 : 0);
+    var sd = (keys.KeyD ? 1 : 0) - (keys.KeyA ? 1 : 0);
+    yaw += ((keys.ArrowLeft ? 1 : 0) - (keys.ArrowRight ? 1 : 0)) * 1.9 * dt;
+    fw = Math.max(-1, Math.min(1, fw));
+    var len = Math.hypot(fw, sd);
+    if (len > 0) {
+      var fx = -Math.sin(yaw), fz = -Math.cos(yaw), rx = Math.cos(yaw), rz = -Math.sin(yaw);
+      var k = (closed ? 1.6 : 3.6) * (fw < 0 ? 0.6 : 1) / Math.max(1, len);
+      tryMove((fx * fw + rx * sd) * k * dt, (fz * fw + rz * sd) * k * dt);
+      walkT += dt; stepT -= dt;
+      if (stepT <= 0) { thump(closed ? 0.03 : 0.07, 110, 0.12); stepT = closed ? 0.9 : 0.45; }
+    }
+    var pcx = Math.floor(px / CELL), pcz = Math.floor(pz / CELL);
+    if (pcx !== dmapCx || pcz !== dmapCz) { dmap = bfs(pcx, pcz).d; dmapCx = pcx; dmapCz = pcz; }
+    var anySeen = false, near = null, nd = 1e9;
+    hunted.forEach(function (h) {
+      if (!h.alive) return;
+      var hx = h.g.position.x, hz = h.g.position.z;
+      if (!closed && canSee(hx, hz, 9)) {
+        anySeen = true; fleeStep(h, dt);
+        hx = h.g.position.x; hz = h.g.position.z;
+      }
+      var d = Math.hypot(hx - px, hz - pz);
+      if (d < 1.15) { h.alive = false; h.g.visible = false; caught++; thump(0.5, 90, 0.4); updateHud(); return; }
+      if (d < nd) { nd = d; near = { x: hx, z: hz, d: d }; }
+    });
+    seen = anySeen; huntNear = near;
+    if (!near && caught > 0) { finishHunt(); return; }
+    lid += ((closed ? 0.9 : 0) - lid) * Math.min(1, dt * (closed ? 16 : 9));
+    audioStep(dt, near ? nd : 99, false);
+  }
+  el.leaveBtn.addEventListener("click", function () {
+    state = "end"; stateT = 0; gmode = "escape";
+    el.choices.hidden = true;
+    el.oTitle.textContent = "You walked out into the morning.";
+    el.oBody.textContent = "Levels cleared: 3.\nYou do not look back.";
+    el.oCta.textContent = "Press space or tap to play again";
+  });
+  el.huntBtn.addEventListener("click", startHunt);
+
+  /* ---------- Audio ---------- */
+  var AC = null, master = null, scrape = null, soundOn = true, noiseBuf = null, riser = null, riserOsc = null;
+  function initAudio() {
+    if (AC || !soundOn) return;
+    try {
+      AC = new (window.AudioContext || window.webkitAudioContext)();
+      master = AC.createGain(); master.gain.value = 0.9; master.connect(AC.destination);
+      [48, 48.7].forEach(function (f) {
+        var o = AC.createOscillator(); o.type = "sine"; o.frequency.value = f;
+        var g = AC.createGain(); g.gain.value = 0.05; o.connect(g); g.connect(master); o.start();
+      });
+      var len = AC.sampleRate * 2, buf = AC.createBuffer(1, len, AC.sampleRate), data = buf.getChannelData(0);
+      for (var i = 0; i < len; i++) data[i] = Math.random() * 2 - 1;
+      noiseBuf = buf;
+      var src = AC.createBufferSource(); src.buffer = buf; src.loop = true;
+      var bp = AC.createBiquadFilter(); bp.type = "bandpass"; bp.frequency.value = 650; bp.Q.value = 1.1;
+      scrape = AC.createGain(); scrape.gain.value = 0;
+      src.connect(bp); bp.connect(scrape); scrape.connect(master); src.start();
+      riser = AC.createGain(); riser.gain.value = 0;
+      riserOsc = AC.createOscillator(); riserOsc.type = "sine"; riserOsc.frequency.value = 800;
+      riserOsc.connect(riser); riser.connect(master); riserOsc.start();
+    } catch (e) { AC = null; }
+  }
+  function thump(vol, f, dur) {
+    if (!AC || !soundOn) return;
+    var tt = AC.currentTime, o = AC.createOscillator(), g = AC.createGain();
+    o.type = "sine"; o.frequency.setValueAtTime(f, tt); o.frequency.exponentialRampToValueAtTime(Math.max(30, f * 0.55), tt + dur * 0.7);
+    g.gain.setValueAtTime(0.0001, tt); g.gain.exponentialRampToValueAtTime(vol, tt + 0.02); g.gain.exponentialRampToValueAtTime(0.0001, tt + dur);
+    o.connect(g); g.connect(master); o.start(tt); o.stop(tt + dur + 0.05);
+  }
+  function burst(type, freq, q, vol, dur) {
+    if (!AC || !soundOn || !noiseBuf) return;
+    var tt = AC.currentTime, s = AC.createBufferSource(); s.buffer = noiseBuf;
+    var f = AC.createBiquadFilter(); f.type = type; f.frequency.value = freq; f.Q.value = q;
+    var g = AC.createGain();
+    g.gain.setValueAtTime(0.0001, tt);
+    g.gain.exponentialRampToValueAtTime(vol, tt + dur * 0.3);
+    g.gain.exponentialRampToValueAtTime(0.0001, tt + dur);
+    s.connect(f); f.connect(g); g.connect(master); s.start(tt); s.stop(tt + dur + 0.1);
+  }
+  // Far-off sounds that never explain themselves: slow dread between the close calls.
+  function ambient() {
+    var r = Math.random();
+    if (r < 0.35) burst("lowpass", 160, 0.7, 0.35, 3.5);
+    else if (r < 0.65) { thump(0.18, 520, 0.12); setTimeout(function () { thump(0.12, 430, 0.12); }, 380); }
+    else if (r < 0.85) { for (var i = 0; i < 5; i++) (function (n) { setTimeout(function () { thump(0.06, 100, 0.1); }, n * 520); })(i); }
+    else burst("bandpass", 1800, 6, 0.08, 2.2);
+  }
+  // Wall plates only rewrite while you are not looking at them.
+  function rewritePlate() {
+    if (!plates.length) return;
+    var lvl = Math.max(0, Math.min(1, (level - 1) / 3));
+    var cand = plates.filter(function (pl) { return !canSee(pl.x, pl.z, 30); });
+    if (!cand.length) return;
+    var pick = cand[Math.floor(Math.random() * cand.length)];
+    var line = Math.random() < 0.25 + 0.4 * lvl
+      ? CREEPY[Math.floor(Math.random() * CREEPY.length)]
+      : corrupt(NAMES[Math.floor(Math.random() * NAMES.length)], Math.max(0.3, lvl));
+    drawPlate(pick.tex.image.getContext("2d"), 256, 80, line);
+    pick.tex.needsUpdate = true;
+  }
+  function audioStep(dt, d, moving) {
+    if (!AC || !soundOn) return;
+    var close = Math.max(0, Math.min(1, 1 - d / 16));
+    if (riser) {
+      var rc = moving && d < 7 ? 1 - d / 7 : 0;
+      riser.gain.setTargetAtTime(rc * 0.05, AC.currentTime, 0.1);
+      riserOsc.frequency.setTargetAtTime(700 + rc * 500, AC.currentTime, 0.1);
+    }
+    if (scrape) scrape.gain.setTargetAtTime(moving ? Math.max(0, 1 - d / 18) * 0.22 : 0, AC.currentTime, 0.06);
+    hbT -= dt;
+    if (hbT <= 0 && close > 0.04) {
+      thump(0.1 + close * 0.3, 70, 0.22);
+      setTimeout(function () { thump(0.07 + close * 0.2, 60, 0.2); }, 170);
+      hbT = 1.15 - close * 0.7;
+    } else if (hbT <= 0) { hbT = 0.5; }
+  }
+  el.soundBtn.addEventListener("click", function () {
+    soundOn = !soundOn;
+    el.soundBtn.textContent = soundOn ? "Sound on" : "Sound off";
+    el.soundBtn.setAttribute("aria-pressed", String(soundOn));
+    if (master) master.gain.value = soundOn ? 0.9 : 0;
+    if (soundOn && !AC && state === "play") initAudio();
+  });
+
+  /* ---------- Input ---------- */
+  window.addEventListener("keydown", function (e) {
+    var c = e.code;
+    if (c === "Space" || c === "ArrowUp" || c === "ArrowDown" || c === "ArrowLeft" || c === "ArrowRight") e.preventDefault();
+    if (c === "Space") { if (!e.repeat) pressBlink(true); return; }
+    keys[c] = true;
+  });
+  window.addEventListener("keyup", function (e) {
+    if (e.code === "Space") { e.preventDefault(); pressBlink(false); return; }
+    keys[e.code] = false;
+  });
+  window.addEventListener("blur", function () {
+    held = false; walkBtn = false; keys = {};
+    el.blinkBtn.classList.remove("down"); el.walkBtn.classList.remove("down");
+  });
+  function hold(node, on, off) {
+    node.addEventListener("pointerdown", function (e) { e.preventDefault(); try { node.setPointerCapture(e.pointerId); } catch (err) {} on(); });
+    ["pointerup", "pointercancel", "lostpointercapture"].forEach(function (ev) { node.addEventListener(ev, off); });
+  }
+  hold(el.blinkBtn, function () { pressBlink(true); }, function () { pressBlink(false); });
+  hold(el.walkBtn, function () { if (state === "play") { walkBtn = true; el.walkBtn.classList.add("down"); } },
+    function () { walkBtn = false; el.walkBtn.classList.remove("down"); });
+
+  var drag = null;
+  el.view.addEventListener("pointerdown", function (e) {
+    if (e.target.closest && e.target.closest(".choices")) return;
+    e.preventDefault();
+    try { el.view.setPointerCapture(e.pointerId); } catch (err) {}
+    if (state !== "play") { pressBlink(true); drag = null; return; }
+    drag = { id: e.pointerId, x: e.clientX, y: e.clientY };
+  });
+  el.view.addEventListener("pointermove", function (e) {
+    if (!drag || drag.id !== e.pointerId || state !== "play") return;
+    var dx = e.clientX - drag.x, dy = e.clientY - drag.y;
+    drag.x = e.clientX; drag.y = e.clientY;
+    if (held || forced > 0) return;
+    yaw -= dx * 0.006;
+    pitch = Math.max(-0.6, Math.min(0.6, pitch - dy * 0.005));
+  });
+  ["pointerup", "pointercancel", "lostpointercapture"].forEach(function (ev) {
+    el.view.addEventListener(ev, function () { if (state !== "play") pressBlink(false); drag = null; });
+  });
+
+  /* ---------- Render loop ---------- */
+  function ui() {
+    var mode, label;
+    if (state === "ready" || state === "intro") { mode = "open"; label = "Ready"; }
+    else if (state === "dead") { mode = "forced"; label = "It reached you"; }
+    else if (state === "won" || state === "choice") { mode = "open"; label = "Exit reached"; }
+    else if (state === "end") { mode = "open"; label = gmode === "hunt" ? "The station is empty" : "You got out"; }
+    else if (gmode === "hunt") {
+      if (held) { mode = "closed"; label = "Eyes closed · you creep · they hold still"; }
+      else if (seen) { mode = "open"; label = "You see it · it runs"; }
+      else { mode = "closed"; label = "Not looking · it is hiding"; }
+    }
+    else if (forced > 0) { mode = "forced"; label = "Eyes giving out · you stop · it moves"; }
+    else if (held) { mode = "closed"; label = "Eyes closed · you stop · it moves"; }
+    else if (seen) { mode = "open"; label = "You see it · it is frozen"; }
+    else if (reading) { mode = "closed"; label = "Reading the sign · it is moving closer"; }
+    else { mode = "closed"; label = "Not looking at it · it is moving closer"; }
+    if (el.status.dataset.mode !== mode) el.status.dataset.mode = mode;
+    if (el.statusText.textContent !== label) el.statusText.textContent = label;
+    var playing = state === "play";
+    var tx = ent.position.x, tz = ent.position.z;
+    if (gmode === "hunt") { tx = huntNear ? huntNear.x : px + 99; tz = huntNear ? huntNear.z : pz; }
+    var d = Math.hypot(tx - px, tz - pz);
+    el.sMeter.style.visibility = gmode === "hunt" ? "hidden" : "visible";
+    el.fill.style.width = (playing ? strain : 0) + "%";
+    el.gapFill.style.width = (playing ? Math.min(100, d / 30 * 100) : 100) + "%";
+    el.sMeter.classList.toggle("hot", playing && strain > 75);
+    el.gMeter.classList.toggle("hot", playing && d < 8);
+    var showDir = gmode === "hunt" ? (playing && huntNear) : (playing && !seen && d < 25);
+    if (showDir && d < 30) {
+      var edx = tx - px, edz = tz - pz;
+      var rel = Math.atan2(edx * Math.cos(yaw) + edz * -Math.sin(yaw), edx * -Math.sin(yaw) + edz * -Math.cos(yaw));
+      el.dirArrow.style.transform = "rotate(" + rel.toFixed(2) + "rad)";
+      el.dir.style.opacity = (0.4 + 0.6 * Math.max(0, 1 - d / 25)).toFixed(2);
+    } else { el.dir.style.opacity = "0"; }
+    el.lid.style.opacity = lid.toFixed(2);
+    el.vig.style.opacity = (0.45 + (playing ? strain / 100 : 0) * 0.5 + (playing && !seen && gmode !== "hunt" && d < 7 ? (1 - d / 7) * 0.3 : 0)).toFixed(2);
+  }
+  var last = performance.now();
+  function frame(now) {
+    var dt = Math.min(0.05, (now - last) / 1000); last = now; t += dt;
+    if (state === "play") { if (gmode === "hunt") stepHunt(dt); else stepPlay(dt); }
+    else if (state === "dead" || state === "won" || state === "choice" || state === "end" || state === "intro") {
+      stateT += dt;
+      if (stateT > 1.0 && el.overlay.hidden) {
+        el.overlay.hidden = false;
+        if (state === "choice") { el.choices.hidden = false; el.leaveBtn.focus(); }
+      } else if (state === "choice" && stateT > 1.0 && el.choices.hidden) {
+        el.choices.hidden = false; el.leaveBtn.focus();
+      }
+    }
+    var bob = (!RM && state === "play" && walkT > 0 && stepT > 0 && !held && forced <= 0 && (keys.KeyW || keys.KeyS || keys.ArrowUp || keys.ArrowDown || walkBtn)) ? Math.sin(walkT * 8) * 0.03 : 0;
+    camera.position.set(px, EYE + bob, pz);
+    camera.rotation.set(pitch, yaw, 0);
+    ui();
+    renderer.render(scene, camera);
+    requestAnimationFrame(frame);
+  }
+
+  var boot = function () {
+    buildLevel(); resetPlayer(); ent.visible = false;
+    updateHud();
+    requestAnimationFrame(frame);
+  };
+  if (document.fonts && document.fonts.load) {
+    Promise.all([document.fonts.load("700 40px 'Archivo Narrow'")]).catch(function () {}).then(boot);
+  } else { boot(); }
+})();
+</script>
