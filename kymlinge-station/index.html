@@ -5,8 +5,6 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo+Narrow:wght@600;700&family=IBM+Plex+Mono:wght@400;500&display=swap">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/utils/SkeletonUtils.js"></script>
 <style>
 [hidden] { display: none !important; }
 /* Layout concept: one 3D view with the rules in a status bar beneath it. The only light is exit-sign green. */
@@ -356,123 +354,82 @@ Look at it to freeze it. Back away to win some distance.</p>
     return canvasTex(256, 80, function (c, w, h) { drawPlate(c, w, h, name); });
   }
 
-  /* ---------- The entity (original design) ---------- */
+  /* ---------- The entity: a hooded black wraith, 1.85 m tall ---------- */
+  // Drawn after the team's ink illustration: a hood with two white eyes, a heavy cloak whose hem tears into
+  // brush-stroke strips, and long arms that hang to the thigh. Almost no light comes back from it.
+  var inkMat = new THREE.MeshStandardMaterial({ color: 0x050606, roughness: 1, emissive: 0x020303, side: THREE.DoubleSide });
+  var inkDeepMat = new THREE.MeshBasicMaterial({ color: 0x000000 });
+  var eyeWhiteMat = new THREE.MeshBasicMaterial({ color: 0xffffff, fog: false });
+  function whiteGlowTex() {
+    var c = document.createElement("canvas"); c.width = c.height = 64;
+    var g = c.getContext("2d"), gr = g.createRadialGradient(32, 32, 0, 32, 32, 32);
+    gr.addColorStop(0, "rgba(255,255,255,1)"); gr.addColorStop(0.3, "rgba(210,235,255,0.45)"); gr.addColorStop(1, "rgba(160,200,255,0)");
+    g.fillStyle = gr; g.fillRect(0, 0, 64, 64);
+    return new THREE.CanvasTexture(c);
+  }
+  var eyeHaloMat = new THREE.SpriteMaterial({ map: whiteGlowTex(), blending: THREE.AdditiveBlending, depthWrite: false, transparent: true, fog: false });
+  var skinMat = inkMat, coatMat = inkMat, voidMat = inkDeepMat, glareMat = eyeWhiteMat;   // names used elsewhere
+  function buildWraith() {
+    var root = new THREE.Group(), W = { root: root, hem: [], arms: [] };
+    var body = new THREE.Group(); root.add(body); W.body = body;
+    var cloak = new THREE.Mesh(new THREE.CylinderGeometry(0.22, 0.46, 1.1, 16, 1, true), inkMat);
+    cloak.position.y = 1.05; body.add(cloak);
+    var sh = new THREE.Mesh(new THREE.SphereGeometry(1, 14, 10), inkMat);       // hunched shoulders
+    sh.scale.set(0.36, 0.2, 0.26); sh.position.set(0, 1.5, -0.02); body.add(sh);
+    var back = new THREE.Mesh(new THREE.SphereGeometry(1, 12, 8), inkMat);
+    back.scale.set(0.3, 0.34, 0.24); back.position.set(0, 1.28, -0.1); body.add(back);
+    for (var i = 0; i < 18; i++) {                                              // torn hem, like brush strokes
+      var ang = i / 18 * Math.PI * 2, len = 0.2 + ((i * 7) % 5) * 0.07;
+      var hg2 = new THREE.Group(); hg2.position.set(Math.sin(ang) * 0.44, 0.52, Math.cos(ang) * 0.44); hg2.rotation.y = ang;
+      var st = new THREE.Mesh(boxGeo2, inkMat); st.scale.set(0.12, len, 0.015); st.position.y = -len / 2; hg2.add(st);
+      body.add(hg2); W.hem.push(hg2);
+    }
+    var headG = new THREE.Group(); headG.position.set(0, 1.58, 0.02); body.add(headG); W.headG = headG;
+    var hood = new THREE.Mesh(new THREE.SphereGeometry(1, 16, 12), inkMat);
+    hood.scale.set(0.22, 0.27, 0.25); headG.add(hood);
+    var peak = new THREE.Mesh(new THREE.ConeGeometry(0.16, 0.26, 10), inkMat);  // hood peak, tip stays under 1.85 m
+    peak.position.set(0, 0.2, -0.07); peak.rotation.x = -0.45; headG.add(peak);
+    var face = new THREE.Mesh(new THREE.SphereGeometry(1, 12, 10), inkDeepMat);
+    face.scale.set(0.15, 0.19, 0.12); face.position.set(0, -0.01, 0.15); headG.add(face);
+    [-1, 1].forEach(function (sd) {
+      var eye = new THREE.Mesh(new THREE.SphereGeometry(1, 8, 6), eyeWhiteMat);
+      eye.scale.set(0.024, 0.032, 0.014); eye.position.set(sd * 0.065, 0.02, 0.255); headG.add(eye);
+      var halo = new THREE.Sprite(eyeHaloMat); halo.scale.set(0.22, 0.22, 1); halo.position.set(sd * 0.065, 0.02, 0.26); headG.add(halo);
+    });
+    [-1, 1].forEach(function (sd) {                                             // long arms, hands at the thigh
+      var ag = new THREE.Group(); ag.position.set(sd * 0.3, 1.48, 0.0); body.add(ag);
+      var up = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.04, 0.95, 8), inkMat); up.position.y = -0.475; ag.add(up);
+      var hand = new THREE.Mesh(new THREE.SphereGeometry(0.055, 8, 6), inkMat); hand.position.y = -0.98; ag.add(hand);
+      for (var f = -1; f <= 1; f++) {
+        var fg = new THREE.Mesh(new THREE.CylinderGeometry(0.012, 0.006, 0.2, 5), inkMat);
+        fg.position.set(f * 0.025, -1.11, 0.005 * f); fg.rotation.z = f * 0.12; ag.add(fg);
+      }
+      W.arms.push(ag);
+    });
+    return W;
+  }
+  var boxGeo2 = new THREE.BoxGeometry(1, 1, 1);
+  function poseWraith(W, t) {
+    W.headG.rotation.z = Math.sin(t * 1.3) * 0.14;
+    W.headG.rotation.x = 0.12 + Math.sin(t * 0.8 + 2) * 0.08;
+    W.arms[0].rotation.z = 0.06 + Math.sin(t * 0.7) * 0.1;
+    W.arms[1].rotation.z = -0.06 - Math.sin(t * 0.9 + 1) * 0.1;
+    W.arms[0].rotation.x = W.arms[1].rotation.x = 0.1 + Math.sin(t * 1.1) * 0.05;
+    W.body.rotation.z = Math.sin(t * 0.8) * 0.035;
+    for (var i = 0; i < W.hem.length; i++) { W.hem[i].rotation.x = Math.sin(t * 2.2 + i * 1.7) * 0.12; W.hem[i].rotation.z = Math.sin(t * 1.6 + i) * 0.06; }
+  }
   var ent = new THREE.Group();
-  // A draugr: the swollen, death-blue Norse dead, in the rags of its burial clothes.
-  var skinMat = new THREE.MeshStandardMaterial({ color: 0x8da3b3, roughness: 0.85, emissive: 0x16222c });
-  var coatMat = new THREE.MeshStandardMaterial({ color: 0x2b2f33, roughness: 0.95, emissive: 0x08090a });
-  var voidMat = new THREE.MeshBasicMaterial({ color: 0x000000 });
-  var glareMat = new THREE.MeshBasicMaterial({ color: 0xbfefff });
-  [-1, 1].forEach(function (s) {
-    var leg = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.055, 1.15, 8), skinMat);
-    leg.position.set(s * 0.12, 0.575, 0); ent.add(leg);
-  });
-  var coatM = new THREE.Mesh(new THREE.CylinderGeometry(0.22, 0.36, 1.25, 12), coatMat);
-  coatM.position.y = 1.15; ent.add(coatM);
-  var belly = new THREE.Mesh(new THREE.SphereGeometry(0.3, 14, 10), skinMat);
-  belly.scale.set(1.15, 0.95, 0.95); belly.position.set(0, 1.28, 0.06); ent.add(belly);
-  var neck = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.06, 0.35, 8), skinMat);
-  neck.position.y = 1.9; ent.add(neck);
-  var headG = new THREE.Group(); headG.position.set(0, 1.95, 0); ent.add(headG);
-  var head = new THREE.Mesh(new THREE.SphereGeometry(0.17, 16, 12), skinMat);
-  head.scale.set(0.85, 1.35, 0.9); head.position.y = 0.25; headG.add(head);
-  [-1, 1].forEach(function (s) {
-    var eye = new THREE.Mesh(new THREE.SphereGeometry(1, 8, 6), voidMat);
-    eye.scale.set(0.035, 0.06, 0.02); eye.position.set(s * 0.055, 0.28, 0.145); headG.add(eye);
-    var glare = new THREE.Mesh(new THREE.SphereGeometry(1, 6, 4), glareMat);
-    glare.scale.set(0.012, 0.02, 0.01); glare.position.set(s * 0.055, 0.28, 0.16); headG.add(glare);
-  });
-  var arms = [];
-  [-1, 1].forEach(function (s) {
-    var g = new THREE.Group(); g.position.set(s * 0.26, 1.72, 0);
-    var arm = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.03, 1.3, 6), skinMat);
-    arm.position.y = -0.65; g.add(arm);
-    var hand = new THREE.Mesh(new THREE.SphereGeometry(0.05, 8, 6), skinMat);
-    hand.position.y = -1.32; g.add(hand);
-    ent.add(g); arms.push(g);
-  });
-  var entLight = new THREE.PointLight(0xdfe7e2, 0.9, 7, 2);
+  var entW = buildWraith(); ent.add(entW.root);
+  var headG = entW.headG, arms = entW.arms;
+  var entLight = new THREE.PointLight(0xdfe7e2, 0.4, 7, 2);
   entLight.position.set(0, 1.6, 0.6); ent.add(entLight);
   ent.visible = false;
   scene.add(ent);
   var poseT = 0;
-  function pose() {
-    headG.rotation.z = Math.sin(poseT * 1.3) * 0.5;
-    headG.rotation.x = Math.sin(poseT * 0.8 + 2) * 0.25;
-    arms[0].rotation.z = 0.08 + Math.sin(poseT * 0.7) * 0.35;
-    arms[1].rotation.z = -0.08 - Math.sin(poseT * 0.9 + 1) * 0.35;
-  }
+  function pose() { poseWraith(entW, poseT); }
 
-
-  /* ---------- The draugr model: rigged GLB, walk and run clips ---------- */
-  // Files sit next to this page: draugr.glb (mesh, skeleton, textures), walk_clip.glb, run_clip.glb.
-  // If they cannot load (for example the page is opened from file://), the built-in draugr above stays in use.
-  var MODEL = { src: null, clips: {}, ready: false };
-  var entRig = null;
-  function glowTexture() {
-    var c = document.createElement("canvas"); c.width = c.height = 64;
-    var g = c.getContext("2d"), gr = g.createRadialGradient(32, 32, 0, 32, 32, 32);
-    gr.addColorStop(0, "rgba(255,70,50,1)"); gr.addColorStop(0.25, "rgba(255,40,30,0.55)"); gr.addColorStop(1, "rgba(255,0,0,0)");
-    g.fillStyle = gr; g.fillRect(0, 0, 64, 64);
-    return new THREE.CanvasTexture(c);
-  }
-  var eyeCoreMat = new THREE.MeshBasicMaterial({ color: 0xff2a1c, fog: false });
-  var eyeGlowMat = new THREE.SpriteMaterial({ map: glowTexture(), color: 0xff3a28, blending: THREE.AdditiveBlending, depthWrite: false, transparent: true, fog: false });
-  // Glowing red eyes, parented to the head bone so they follow the animation.
-  function addEyes(root) {
-    var head = root.getObjectByName("Head");
-    if (!head) return;
-    [-1, 1].forEach(function (sd) {
-      var core = new THREE.Mesh(new THREE.SphereGeometry(0.016, 8, 6), eyeCoreMat);
-      core.position.set(sd * EYE_X, EYE_Y, EYE_Z); head.add(core);
-      var glow = new THREE.Sprite(eyeGlowMat);
-      glow.scale.set(0.2, 0.2, 1); glow.position.copy(core.position); head.add(glow);
-    });
-  }
-  var EYE_X = 0.04, EYE_Y = 0.15, EYE_Z = 0.085;
-  function makeRig() {
-    var root = THREE.SkeletonUtils ? THREE.SkeletonUtils.clone(MODEL.src) : MODEL.src.clone(true);
-    root.traverse(function (o) { if (o.isMesh) o.frustumCulled = false; });
-    addEyes(root);
-    var mixer = new THREE.AnimationMixer(root);
-    var walk = mixer.clipAction(MODEL.clips.walk), run = mixer.clipAction(MODEL.clips.run);
-    walk.timeScale = 1.25; run.timeScale = 0.8;
-    walk.play(); run.play();
-    var rig = { root: root, mixer: mixer, walk: walk, run: run, w: 0, wantRun: false };
-    updateRig(rig, Math.random() * 0.9, false);
-    return rig;
-  }
-  // Advance the skeleton. Not calling this is what freezes the monster in its current pose.
-  function updateRig(rig, dt, wantRun) {
-    rig.w += Math.max(-dt * 3, Math.min(dt * 3, (wantRun ? 1 : 0) - rig.w));
-    rig.walk.setEffectiveWeight(1 - rig.w); rig.run.setEffectiveWeight(rig.w);
-    rig.mixer.update(dt);
-  }
-  function b64buf(str) {
-    var bin = atob(str), u = new Uint8Array(bin.length);
-    for (var i = 0; i < bin.length; i++) u[i] = bin.charCodeAt(i);
-    return u.buffer;
-  }
-  // Reads a GLB from embedded data (window.DRAUGR_DATA, used by the published page) or from a file next to this page.
-  function loadGlb(L, key, url, ok, bad) {
-    var D = window.DRAUGR_DATA;
-    if (D && D[key]) { try { L.parse(b64buf(D[key]), "", ok, bad); } catch (e) { bad(e); } }
-    else L.load(url, ok, undefined, bad);
-  }
-  function loadModel() {
-    if (!THREE.GLTFLoader) return;
-    var L = new THREE.GLTFLoader(), none = function () {};
-    loadGlb(L, "draugr", "draugr.glb", function (g) {
-      loadGlb(L, "walk", "walk_clip.glb", function (w) {
-        loadGlb(L, "run", "run_clip.glb", function (r) {
-          MODEL.src = g.scene; MODEL.clips.walk = w.animations[0]; MODEL.clips.run = r.animations[0];
-          MODEL.ready = true;
-          ent.children.forEach(function (c) { if (c !== entLight) c.visible = false; });
-          entRig = makeRig(); ent.add(entRig.root);
-        }, none);
-      }, none);
-    }, none);
-  }
+  var MODEL = { ready: false }, entRig = null;   // GLB draugr dropped in favour of the ink wraith
+  function updateRig() {}
 
   /* ---------- Level ---------- */
   var level = 1, best = 0;
@@ -923,50 +880,11 @@ Look at it to freeze it. Back away to win some distance.</p>
     });
   }
 
-  function poseEntity(h) {
-    if (h.rig) return;
-    h.headG.rotation.z = Math.sin(h.poseT * 1.3) * 0.5;
-    h.headG.rotation.x = Math.sin(h.poseT * 0.8 + 2) * 0.25;
-    h.arms[0].rotation.z = 0.08 + Math.sin(h.poseT * 0.7) * 0.35;
-    h.arms[1].rotation.z = -0.08 - Math.sin(h.poseT * 0.9 + 1) * 0.35;
-  }
+  function poseEntity(h) { poseWraith(h.W, h.poseT); }
   function makeHunted(x, z) {
-    if (MODEL.ready) {
-      var rg = makeRig(), g2 = new THREE.Group();
-      g2.add(rg.root); g2.rotation.order = "YXZ"; g2.position.set(x, 0, z); scene.add(g2);
-      return { g: g2, headG: null, arms: null, poseT: 0, tgt: null, alive: true, rig: rg };
-    }
-    var g = new THREE.Group();
-    [-1, 1].forEach(function (s) {
-      var leg = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.055, 1.15, 8), skinMat);
-      leg.position.set(s * 0.12, 0.575, 0); g.add(leg);
-    });
-    var cm = new THREE.Mesh(new THREE.CylinderGeometry(0.22, 0.36, 1.25, 12), coatMat);
-    cm.position.y = 1.15; g.add(cm);
-    var bl = new THREE.Mesh(new THREE.SphereGeometry(0.3, 14, 10), skinMat);
-    bl.scale.set(1.15, 0.95, 0.95); bl.position.set(0, 1.28, 0.06); g.add(bl);
-    var nk = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.06, 0.35, 8), skinMat);
-    nk.position.y = 1.9; g.add(nk);
-    var hg = new THREE.Group(); hg.position.set(0, 1.95, 0); g.add(hg);
-    var hd = new THREE.Mesh(new THREE.SphereGeometry(0.17, 16, 12), skinMat);
-    hd.scale.set(0.85, 1.35, 0.9); hd.position.y = 0.25; hg.add(hd);
-    [-1, 1].forEach(function (s) {
-      var ey = new THREE.Mesh(new THREE.SphereGeometry(1, 8, 6), voidMat);
-      ey.scale.set(0.035, 0.06, 0.02); ey.position.set(s * 0.055, 0.28, 0.145); hg.add(ey);
-      var gl = new THREE.Mesh(new THREE.SphereGeometry(1, 6, 4), glareMat);
-      gl.scale.set(0.012, 0.02, 0.01); gl.position.set(s * 0.055, 0.28, 0.16); hg.add(gl);
-    });
-    var am = [];
-    [-1, 1].forEach(function (s) {
-      var ag = new THREE.Group(); ag.position.set(s * 0.26, 1.72, 0);
-      var a = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.03, 1.3, 6), skinMat);
-      a.position.y = -0.65; ag.add(a);
-      var hn = new THREE.Mesh(new THREE.SphereGeometry(0.05, 8, 6), skinMat);
-      hn.position.y = -1.32; ag.add(hn);
-      g.add(ag); am.push(ag);
-    });
-    g.rotation.order = "YXZ"; g.position.set(x, 0, z); scene.add(g);
-    var h = { g: g, headG: hg, arms: am, poseT: Math.random() * 20, tgt: null, alive: true };
+    var g = new THREE.Group(), W = buildWraith();
+    g.add(W.root); g.rotation.order = "YXZ"; g.position.set(x, 0, z); scene.add(g);
+    var h = { g: g, W: W, headG: W.headG, arms: W.arms, poseT: Math.random() * 20, tgt: null, alive: true };
     poseEntity(h);
     return h;
   }
@@ -1338,7 +1256,6 @@ Look at it to freeze it. Back away to win some distance.</p>
   window.__step = function (n, dt) { for (var i = 0; i < n; i++) tick(dt || 0.05); draw(); return { state: state, gmode: gmode, level: level, caught: caught }; };
 
   var boot = function () {
-    loadModel();
     buildLevel(); resetPlayer(); ent.visible = false;
     updateHud();
     if (MANUAL) draw(); else requestAnimationFrame(frame);

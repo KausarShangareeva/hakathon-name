@@ -4,9 +4,9 @@ A short first-person horror game set on the last Stockholm subway home. You wake
 
 ## Play
 
-Serve this folder over HTTP (for example `python3 -m http.server`) and open `index.html`. No build step. Three.js, GLTFLoader and SkeletonUtils load from a CDN.
+Open `index.html` in a browser. No build step. Three.js loads from a CDN.
 
-The draugr is a rigged GLB (`draugr.glb`, 2.5 m tall, feet on the floor) with `walk_clip.glb` and `run_clip.glb`. It walks or runs when you are not looking, and freezes in its current pose when you are. Textures are the original maps resized to 1024 px. If the files cannot load, a built-in draugr is used instead.
+The entity is a hooded black figure, 1.85 m tall, with two white eyes and a torn hem, drawn after the team's ink illustration. It is built from simple shapes in code, so there are no model files.
 
 Add `?demo` to the URL to watch an autopilot play all three levels and the armed hunt.
 
