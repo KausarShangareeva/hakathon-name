@@ -511,8 +511,6 @@ Look at it to freeze it. Back away to win some distance.</p>
       var glow = new THREE.Sprite(eyeHaloMat);
       glow.scale.set(0.2, 0.2, 1); glow.position.copy(core.position); head.add(glow);
     });
-    var mouth = new THREE.Mesh(new THREE.PlaneGeometry(0.18, 0.09), new THREE.MeshBasicMaterial({ map: grinTex(), transparent: true, depthWrite: false, fog: false, opacity: 0.9 }));
-    mouth.position.set(0.004, EYE_Y - 0.075, EYE_Z + 0.014); mouth.rotation.z = 0.12; head.add(mouth);
   }
   function makeRig() {
     var root = THREE.SkeletonUtils ? THREE.SkeletonUtils.clone(MODEL.src) : MODEL.src.clone(true);
@@ -521,14 +519,10 @@ Look at it to freeze it. Back away to win some distance.</p>
     addEyes(root);
     var aura = buildAura(); root.add(aura.g);
     var mixer = new THREE.AnimationMixer(root);
-    var walk = mixer.clipAction(MODEL.clips.walk), run = mixer.clipAction(MODEL.clips.run);
-    // No stride cycle: hold the clip on one frame and pose the arms by hand, so it glides with its arms out.
-    walk.timeScale = 0; run.timeScale = 0; walk.time = 0.2; walk.play(); run.play();
-    walk.setEffectiveWeight(1); run.setEffectiveWeight(0);
-    var bn = {}; root.traverse(function (o) { if (o.isBone) bn[o.name] = o; });
-    var rig = { root: root, mixer: mixer, walk: walk, run: run, w: 0, wantRun: false, bones: bn, aura: aura, t: Math.random() * 20 };
+    // The design pose: arms spread wide, body upright, tendrils hanging. Every frame starts from the bind pose.
+    var bn = {}, skins = []; root.traverse(function (o) { if (o.isBone) bn[o.name] = o; if (o.isSkinnedMesh) skins.push(o); });
+    var rig = { root: root, mixer: mixer, w: 0, wantRun: false, bones: bn, skins: skins, aura: aura, t: Math.random() * 20 };
     updateRig(rig, Math.random() * 6, false);
-    if (bn.Head) rig.headBase = bn.Head.quaternion.clone();
     return rig;
   }
   // Advance the skeleton. Not calling this is what freezes the monster in its current pose.
@@ -560,32 +554,24 @@ Look at it to freeze it. Back away to win some distance.</p>
     H.parent.getWorldQuaternion(_q3); _q3.invert(); _q2.premultiply(_q3);
     H.quaternion.copy(_q2); H.updateMatrixWorld(true);
   }
-  // Floating and reaching: no walk cycle. The body hovers and sways slowly, both arms reach toward you.
+  // Floating, in the model's own pose: it hovers and sways a little, arms spread, never running.
   function updateRig(rig, dt, wantRun) {
     rig.t += dt;
-    var t = rig.t, B = rig.bones, root = rig.root, reach = wantRun ? 1 : 0.8;
-    rig.mixer.update(0);
+    var t = rig.t, B = rig.bones, root = rig.root;
+    for (var i = 0; i < rig.skins.length; i++) rig.skins[i].skeleton.pose();
     root.position.y = 0.16 + 0.06 * Math.sin(t * 1.5);
-    if (B.Spine) B.Spine.rotation.x += 0.12 + 0.03 * Math.sin(t * 1.1);
-    if (B.LeftLeg) B.LeftLeg.rotation.x += 0.12 * Math.sin(t * 1.3);
-    if (B.RightLeg) B.RightLeg.rotation.x += 0.12 * Math.sin(t * 1.3 + 1.7);
-    root.updateMatrixWorld(true);
-    root.getWorldQuaternion(_rq);
-    [["Left", 1], ["Right", -1]].forEach(function (sd) {
-      var n = sd[0], sg = sd[1], ph = sg > 0 ? 0 : 2.1;
-      var up = 0.12 + 0.09 * Math.sin(t * 1.2 + ph), side = sg * (0.16 + 0.05 * Math.sin(t * 0.9 + ph));
-      _dir.set(side, up, 1).normalize().applyQuaternion(_rq);
-      aimBone(B[n + "Arm"], B[n + "ForeArm"], _dir.clone());
-      _dir.set(side * 0.7, up * 0.8 + 0.04, 1).normalize().applyQuaternion(_rq);
-      aimBone(B[n + "ForeArm"], B[n + "Hand"], _dir.clone());
-      aimBone(B[n + "Hand"], B[n + "HandMiddle1"], _dir.clone());
-    });
+    root.rotation.z = 0.025 * Math.sin(t * 0.9);
+    if (B.Spine) B.Spine.rotation.x += 0.03 * Math.sin(t * 1.1);
+    if (B.LeftArm) B.LeftArm.rotation.z += 0.05 * Math.sin(t * 1.2);
+    if (B.RightArm) B.RightArm.rotation.z -= 0.05 * Math.sin(t * 1.2 + 0.8);
+    if (B.LeftLeg) B.LeftLeg.rotation.x += 0.1 * Math.sin(t * 1.3);
+    if (B.RightLeg) B.RightLeg.rotation.x += 0.1 * Math.sin(t * 1.3 + 1.7);
     root.updateMatrixWorld(true);
   }
   // Dark energy: a cold violet-teal rim glow behind the body plus wisps that rise and curl off it.
   var auraMat = null, wispMat = null;
   function buildAura() {
-    if (!wispMat) wispMat = new THREE.SpriteMaterial({ map: fogTex(), color: 0x000000, depthWrite: false, transparent: true, opacity: 0.5, fog: true });
+    if (!wispMat) wispMat = new THREE.SpriteMaterial({ map: fogTex(), color: 0x000000, depthWrite: false, transparent: true, opacity: 0.32, fog: true });
     var g = new THREE.Group(), wisps = [];
     for (var i = 0; i < 22; i++) {
       var w = new THREE.Sprite(wispMat); g.add(w);
@@ -1648,8 +1634,8 @@ Look at it to freeze it. Back away to win some distance.</p>
     ambLight.intensity = 0.4 * (0.6 + 0.4 * tubeFlick);
     tubeLitMat.color.setRGB(0.84 * tubeFlick, 0.93 * tubeFlick, tubeFlick); tubeGlowMat.opacity = 0.55 * tubeFlick;
     for (var pk = 0; pk < pool.length; pk++) pool[pk].intensity = poolK[pk] * (poolTube[pk] ? tubeFlick : 0.7 + 0.3 * tubeFlick);
-    if (entRig) { animAura(entRig.aura, t, entRig.w); if (state !== "dead") trackHead(entRig); }
-    for (var hi = 0; hi < hunted.length; hi++) if (hunted[hi].rig) { animAura(hunted[hi].rig.aura, t + hi * 3.7, 1); trackHead(hunted[hi].rig); }
+    if (entRig) animAura(entRig.aura, t, entRig.w);
+    for (var hi = 0; hi < hunted.length; hi++) if (hunted[hi].rig) animAura(hunted[hi].rig.aura, t + hi * 3.7, 1);
     animAxe(dt); animHunted(dt); scareTick(dt); breathTick(dt); mistTick(t);
   }
   function draw() {
