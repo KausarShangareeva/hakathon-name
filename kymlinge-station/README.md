@@ -1,4 +1,4 @@
-# Sista Tåget
+# Kymlinge Station
 
 A short first-person horror game set on the last Stockholm subway home. You wake in a dark, closed, empty station lit only by green exit signs, with something long dead walking it. Inspired by Silverpilen and the unopened Kymlinge station, and by the Norse draugr.
 
