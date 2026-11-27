@@ -214,7 +214,7 @@ Look at it to freeze it. Back away to win some distance.</p>
   var camera = new THREE.PerspectiveCamera(72, 16 / 9, 0.1, 60);
   camera.rotation.order = "YXZ";
   scene.add(camera);
-  var ambient = new THREE.AmbientLight(0x101614, 0.4); scene.add(ambient);
+  var ambLight = new THREE.AmbientLight(0x101614, 0.4); scene.add(ambLight);
 
   var pool = [];
   for (var li = 0; li < 8; li++) {
@@ -1013,7 +1013,7 @@ Look at it to freeze it. Back away to win some distance.</p>
         tryMove((fx * fw + rx * sd) * k * dt, (fz * fw + rz * sd) * k * dt);
         walking = true; walkT += dt;
         stepT -= dt;
-        if (stepT <= 0) { thump(0.07, 110, 0.12); stepT = 0.52; }
+        if (stepT <= 0) { footstep(1, 0); stepT = 0.52; }
       }
     }
 
@@ -1146,7 +1146,7 @@ Look at it to freeze it. Back away to win some distance.</p>
       var k = (closed ? 1.6 : 3.6) * (fw < 0 ? 0.6 : 1) / Math.max(1, len);
       tryMove((fx * fw + rx * sd) * k * dt, (fz * fw + rz * sd) * k * dt);
       walkT += dt; stepT -= dt;
-      if (stepT <= 0) { thump(closed ? 0.03 : 0.07, 110, 0.12); stepT = closed ? 0.9 : 0.45; }
+      if (stepT <= 0) { footstep(closed ? 0.45 : 1, 0); stepT = closed ? 0.9 : 0.45; }
     }
     var pcx = Math.floor(px / CELL), pcz = Math.floor(pz / CELL);
     if (pcx !== dmapCx || pcz !== dmapCz) { dmap = bfs(pcx, pcz).d; dmapCx = pcx; dmapCz = pcz; }
@@ -1218,6 +1218,60 @@ Look at it to freeze it. Back away to win some distance.</p>
     g.gain.exponentialRampToValueAtTime(vol, tt + dur * 0.3);
     g.gain.exponentialRampToValueAtTime(0.0001, tt + dur);
     s.connect(f); f.connect(g); g.connect(master); s.start(tt); s.stop(tt + dur + 0.1);
+  }
+  // Footsteps on concrete: a dull heel knock plus a short scuff, fed into a light tunnel echo (two quiet repeats).
+  var echoIn = null, stepAlt = 0, entStepD = 0, entLast = null;
+  function footstep(k, dist) {
+    if (!AC || !soundOn || !noiseBuf) return;
+    if (!echoIn) {
+      echoIn = AC.createGain();
+      var dl = AC.createDelay(1), fb = AC.createGain(), lp = AC.createBiquadFilter(), wet = AC.createGain();
+      dl.delayTime.value = 0.23; fb.gain.value = 0.38; lp.type = "lowpass"; lp.frequency.value = 900; wet.gain.value = 0.55;
+      echoIn.connect(dl); dl.connect(lp); lp.connect(fb); fb.connect(dl); lp.connect(wet); wet.connect(master);
+    }
+    var near = 1 / (1 + dist * 0.55), vol = 0.2 * k * near;
+    if (vol < 0.004) return;
+    var tt = AC.currentTime, side = (stepAlt++ % 2) ? 1 : 0.9;
+    var o = AC.createOscillator(), g = AC.createGain(), s = AC.createBufferSource(), f = AC.createBiquadFilter(), g2 = AC.createGain();
+    o.type = "sine"; o.frequency.setValueAtTime(95 * side, tt); o.frequency.exponentialRampToValueAtTime(48, tt + 0.1);
+    g.gain.setValueAtTime(0.0001, tt); g.gain.exponentialRampToValueAtTime(vol * 1.3, tt + 0.008); g.gain.exponentialRampToValueAtTime(0.0001, tt + 0.13);
+    s.buffer = noiseBuf; f.type = "bandpass"; f.frequency.value = (dist > 0 ? 700 : 1300) * side; f.Q.value = 0.9;
+    g2.gain.setValueAtTime(0.0001, tt); g2.gain.exponentialRampToValueAtTime(vol * 0.9, tt + 0.006); g2.gain.exponentialRampToValueAtTime(0.0001, tt + 0.07);
+    o.connect(g); s.connect(f); f.connect(g2);
+    g.connect(master); g2.connect(master); g.connect(echoIn); g2.connect(echoIn);
+    o.start(tt); o.stop(tt + 0.2); s.start(tt, Math.random()); s.stop(tt + 0.1);
+  }
+  // Breathing: your own, quick and shaky when it is near or you are walking, and its dry rasp once it is close.
+  var breathT = 2, entBreathT = 3, inhale = true;
+  function breathe(vol, dur, freq, ex) {
+    if (!AC || !soundOn || !noiseBuf) return;
+    var tt = AC.currentTime, s = AC.createBufferSource(); s.buffer = noiseBuf;
+    var f = AC.createBiquadFilter(); f.type = "bandpass"; f.frequency.setValueAtTime(freq * (ex ? 0.7 : 1), tt); f.frequency.linearRampToValueAtTime(freq * (ex ? 0.5 : 1.35), tt + dur); f.Q.value = 0.8;
+    var g = AC.createGain();
+    g.gain.setValueAtTime(0.0001, tt); g.gain.exponentialRampToValueAtTime(vol, tt + dur * 0.45); g.gain.exponentialRampToValueAtTime(0.0001, tt + dur);
+    s.connect(f); f.connect(g); g.connect(master); s.start(tt, Math.random()); s.stop(tt + dur + 0.05);
+  }
+  function breathTick(dt) {
+    if (state !== "play") return;
+    var d = Math.hypot(ent.position.x - px, ent.position.z - pz), fear = ent.visible ? Math.max(0, Math.min(1, (12 - d) / 11)) : 0;
+    var moving = walkT > 0 && stepT > 0 ? 1 : 0;
+    breathT -= dt;
+    if (breathT <= 0) {
+      var dur = 0.95 - 0.45 * fear - 0.1 * moving;
+      breathe(0.05 + 0.1 * fear + 0.03 * moving, dur, 650 + 250 * fear, !inhale);
+      inhale = !inhale; breathT = dur + 0.15 + (1 - fear) * 0.5;
+    }
+    if (ent.visible && d < 6) {
+      entBreathT -= dt;
+      if (entBreathT <= 0) { breathe(0.06 * (1 - d / 6) + 0.02, 0.8, 380, true); entBreathT = 1.6 + Math.random() * 0.8; }
+    }
+  }
+  // The entity's own steps, heard from wherever it is: quieter and duller the farther it is.
+  function entityStepsTick() {
+    if (!ent.visible || state !== "play" || gmode !== "escape") { entLast = null; return; }
+    if (!entLast) { entLast = { x: ent.position.x, z: ent.position.z }; return; }
+    var m = Math.hypot(ent.position.x - entLast.x, ent.position.z - entLast.z);
+    if (m > 1.1) { entLast.x = ent.position.x; entLast.z = ent.position.z; var d = Math.hypot(ent.position.x - px, ent.position.z - pz); if (d < 16) footstep(1.5, d); }
   }
   // Far-off sounds that never explain themselves: slow dread between the close calls.
   function ambient() {
@@ -1432,12 +1486,12 @@ Look at it to freeze it. Back away to win some distance.</p>
       flickT = flickSeq > 0 ? 0.04 + Math.random() * 0.09 : 0.5 + Math.random() * 2;
     }
     tubeFlick = baseFlick * (0.86 + 0.14 * Math.sin(t * 53) * Math.sin(t * 17.3));
-    ambient.intensity = 0.4 * (0.6 + 0.4 * tubeFlick);
+    ambLight.intensity = 0.4 * (0.6 + 0.4 * tubeFlick);
     tubeLitMat.color.setRGB(0.84 * tubeFlick, 0.93 * tubeFlick, tubeFlick); tubeGlowMat.opacity = 0.55 * tubeFlick;
     for (var pk = 0; pk < pool.length; pk++) if (poolTube[pk]) pool[pk].intensity = poolK[pk] * tubeFlick;
     if (entRig) animAura(entRig.aura, t, entRig.w);
     for (var hi = 0; hi < hunted.length; hi++) if (hunted[hi].rig) animAura(hunted[hi].rig.aura, t + hi * 3.7, 1);
-    animAxe(dt); animHunted(dt); scareTick(dt);
+    animAxe(dt); animHunted(dt); scareTick(dt); entityStepsTick(); breathTick(dt);
   }
   function draw() {
     var bob = (!RM && state === "play" && walkT > 0 && stepT > 0 && !held && forced <= 0 && (keys.KeyW || keys.KeyS || keys.ArrowUp || keys.ArrowDown || walkBtn)) ? Math.sin(walkT * 8) * 0.03 : 0;
