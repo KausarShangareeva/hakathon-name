@@ -536,7 +536,7 @@ Look at it to freeze it. Back away to win some distance.</p>
     var B = rig.bones, H = B && B.Head; if (!H) return;
     if (rig.headBase) H.quaternion.copy(rig.headBase);
     H.updateMatrixWorld(true);
-    H.getWorldPosition(_v1); _dir.set(px, EYE, pz).sub(_v1).normalize();
+    rig.root.getWorldQuaternion(_q1); _dir.set(0, 0.05, 1).normalize().applyQuaternion(_q1); // fixed in the body's frame: the head never turns on its own
     H.getWorldQuaternion(_q2); _v2.set(0, 0, 1).applyQuaternion(_q2);
     var ang = _v2.angleTo(_dir);
     _q1.setFromUnitVectors(_v2, _dir);
@@ -1028,7 +1028,12 @@ Look at it to freeze it. Back away to win some distance.</p>
     if (Math.abs(va) > vf / 2 + 0.1) return false;
     return los(px, pz, ex, ez);
   }
+  var entSt = { mv: true, t: 0.2 };
   function moveEntity(dt) {
+    // Stop-motion: it lurches forward in short bursts and freezes between them, jerking its pose each time.
+    entSt.t -= dt; var flipped = false;
+    if (entSt.t <= 0) { entSt.mv = !entSt.mv; entSt.t = entSt.mv ? 0.15 + Math.random() * 0.2 : 0.1 + Math.random() * 0.2; flipped = true; }
+    var burst = entSt.mv ? 1.9 : 0;
     var ex = ent.position.x, ez = ent.position.z;
     var ecx = Math.floor(ex / CELL), ecz = Math.floor(ez / CELL);
     var pcx = Math.floor(px / CELL), pcz = Math.floor(pz / CELL);
@@ -1044,15 +1049,15 @@ Look at it to freeze it. Back away to win some distance.</p>
       tgt = { x: (bx + 0.5) * CELL, z: (bz + 0.5) * CELL };
     }
     var dx = tgt.x - ex, dz = tgt.z - ez, dist = Math.hypot(dx, dz);
-    var m = Math.min((2.8 + 0.12 * level) * (Math.hypot(ex - px, ez - pz) < 5 ? 1.2 : 1) * dt, dist);
+    var m = Math.min((2.8 + 0.12 * level) * (Math.hypot(ex - px, ez - pz) < 5 ? 1.2 : 1) * burst * dt, dist);
     if (dist > 0.001) { ent.position.x += dx / dist * m; ent.position.z += dz / dist * m; }
     var toP = Math.hypot(px - ent.position.x, pz - ent.position.z);
     if (entRig) {
-      var face = (toP < 4 || dist < 0.001) ? Math.atan2(px - ent.position.x, pz - ent.position.z) : Math.atan2(dx, dz);
+      var face = Math.atan2(px - ent.position.x, pz - ent.position.z);
       var da = face - ent.rotation.y; while (da > Math.PI) da -= 2 * Math.PI; while (da < -Math.PI) da += 2 * Math.PI;
-      ent.rotation.y += da * Math.min(1, dt * 8);
+      if (entSt.mv) ent.rotation.y += da * (flipped ? 0.85 : Math.min(1, dt * 8));
       entRig.wantRun = entRig.wantRun ? toP < 11 : toP < 8;
-      updateRig(entRig, dt, entRig.wantRun);
+      if (entSt.mv) updateRig(entRig, dt * 2.6, entRig.wantRun);
     } else {
       ent.rotation.y = Math.atan2(px - ent.position.x, pz - ent.position.z);
       poseT += dt * 0.9; pose();
