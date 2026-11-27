@@ -585,7 +585,7 @@ Look at it to freeze it. Back away to win some distance.</p>
   // Dark energy: a cold violet-teal rim glow behind the body plus wisps that rise and curl off it.
   var auraMat = null, wispMat = null;
   function buildAura() {
-    if (!wispMat) wispMat = new THREE.SpriteMaterial({ map: fogTex(), color: 0x7d8696, depthWrite: false, transparent: true, opacity: 0.2, fog: true });
+    if (!wispMat) wispMat = new THREE.SpriteMaterial({ map: fogTex(), color: 0x000000, depthWrite: false, transparent: true, opacity: 0.5, fog: true });
     var g = new THREE.Group(), wisps = [];
     for (var i = 0; i < 22; i++) {
       var w = new THREE.Sprite(wispMat); g.add(w);
