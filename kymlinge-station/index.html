@@ -5,6 +5,8 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo+Narrow:wght@600;700&family=IBM+Plex+Mono:wght@400;500&display=swap">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/utils/SkeletonUtils.js"></script>
 <style>
 [hidden] { display: none !important; }
 /* Layout concept: one 3D view with the rules in a status bar beneath it. The only light is exit-sign green. */
@@ -463,8 +465,95 @@ Look at it to freeze it. Back away to win some distance.</p>
   var poseT = 0;
   function pose() { poseWraith(entW, poseT); }
 
-  var MODEL = { ready: false }, entRig = null;   // GLB draugr dropped in favour of the ink wraith
-  function updateRig() {}
+  /* ---------- The final character: rigged GLB (Meshy), walk and run clips ---------- */
+  // Files next to this page: wraith.glb (mesh, skeleton, textures), wraith_walk.glb, wraith_run.glb.
+  // The published page embeds them as window.DRAUGR_DATA. If neither is available, the built-in hooded figure above stays in use.
+  var MODEL = { src: null, clips: {}, ready: false };
+  var entRig = null;
+  var CHAR_H = 1.85, MODEL_H = 1.8;                 // required height, and the height of the GLB as exported
+  var EYE_X = 0.042, EYE_Y = 0.125, EYE_Z = 0.125;     // eye positions in the Head bone's space
+  // White glowing eyes, parented to the head bone so they follow the animation and stay visible in the dark.
+  function addEyes(root) {
+    var head = root.getObjectByName("Head");
+    if (!head) return;
+    [-1, 1].forEach(function (sd) {
+      var core = new THREE.Mesh(new THREE.SphereGeometry(0.016, 8, 6), eyeWhiteMat);
+      core.position.set(sd * EYE_X, EYE_Y, EYE_Z); head.add(core);
+      var glow = new THREE.Sprite(eyeHaloMat);
+      glow.scale.set(0.22, 0.22, 1); glow.position.copy(core.position); head.add(glow);
+    });
+  }
+  function makeRig() {
+    var root = THREE.SkeletonUtils ? THREE.SkeletonUtils.clone(MODEL.src) : MODEL.src.clone(true);
+    root.scale.setScalar(CHAR_H / MODEL_H);
+    root.traverse(function (o) { if (o.isMesh) o.frustumCulled = false; });
+    addEyes(root);
+    var aura = buildAura(); root.add(aura.g);
+    var mixer = new THREE.AnimationMixer(root);
+    var walk = mixer.clipAction(MODEL.clips.walk), run = mixer.clipAction(MODEL.clips.run);
+    walk.timeScale = 1.25; run.timeScale = 0.8;
+    walk.play(); run.play();
+    var rig = { root: root, mixer: mixer, walk: walk, run: run, w: 0, wantRun: false, aura: aura, t: Math.random() * 20 };
+    updateRig(rig, Math.random() * 0.9, false);
+    return rig;
+  }
+  // Advance the skeleton. Not calling this is what freezes the monster in its current pose.
+  function updateRig(rig, dt, wantRun) {
+    rig.w += Math.max(-dt * 3, Math.min(dt * 3, (wantRun ? 1 : 0) - rig.w));
+    rig.walk.setEffectiveWeight(1 - rig.w); rig.run.setEffectiveWeight(rig.w);
+    rig.mixer.update(dt);
+    rig.t += dt; animAura(rig.aura, rig.t, rig.w);
+  }
+  // Dark energy: a cold violet-teal rim glow behind the body plus wisps that rise and curl off it.
+  var auraMat = null, wispMat = null;
+  function buildAura() {
+    if (!auraMat) {
+      auraMat = new THREE.SpriteMaterial({ map: whiteGlowTex(), color: 0x6a4cff, blending: THREE.AdditiveBlending, depthWrite: false, transparent: true, opacity: 0.8, fog: false });
+      wispMat = new THREE.SpriteMaterial({ map: whiteGlowTex(), color: 0x9a7bff, blending: THREE.AdditiveBlending, depthWrite: false, transparent: true, opacity: 0.85, fog: false });
+    }
+    var g = new THREE.Group(), core = new THREE.Sprite(auraMat);
+    core.scale.set(2.6, 3.4, 1); core.position.set(0, 0.95, -0.08); g.add(core);
+    var wisps = [];
+    for (var i = 0; i < 26; i++) {
+      var w = new THREE.Sprite(wispMat); g.add(w);
+      wisps.push({ s: w, ph: Math.random(), a: Math.random() * 6.28, r: 0.25 + Math.random() * 0.45, sp: 0.25 + Math.random() * 0.4, sz: 0.3 + Math.random() * 0.4 });
+    }
+    return { g: g, core: core, wisps: wisps };
+  }
+  function animAura(a, t, run) {
+    a.core.material.opacity = 0.8; 
+    var pulse = 1 + 0.12 * Math.sin(t * 3.1) + 0.06 * Math.sin(t * 7.3);
+    a.core.scale.set(2.6 * pulse, 3.4 * pulse, 1);
+    for (var i = 0; i < a.wisps.length; i++) {
+      var w = a.wisps[i], k = (w.ph + t * w.sp * (1 + run * 0.8)) % 1, ang = w.a + t * 0.9 + k * 4;
+      w.s.position.set(Math.cos(ang) * w.r * (1 - k * 0.4), 0.05 + k * 2.1, Math.sin(ang) * w.r * 0.7 * (1 - k * 0.4));
+      var sz = w.sz * (1 - k * 0.6); w.s.scale.set(sz, sz * 1.5, 1);
+    }
+  }
+  function b64buf(str) {
+    var bin = atob(str), u = new Uint8Array(bin.length);
+    for (var i = 0; i < bin.length; i++) u[i] = bin.charCodeAt(i);
+    return u.buffer;
+  }
+  function loadGlb(L, key, url, ok, bad) {
+    var D = window.DRAUGR_DATA;
+    if (D && D[key]) { try { L.parse(b64buf(D[key]), "", ok, bad); } catch (e) { bad(e); } }
+    else L.load(url, ok, undefined, bad);
+  }
+  function loadModel() {
+    if (!THREE.GLTFLoader) return;
+    var L = new THREE.GLTFLoader(), none = function () {};
+    loadGlb(L, "draugr", "wraith.glb", function (g) {
+      loadGlb(L, "walk", "wraith_walk.glb", function (w) {
+        loadGlb(L, "run", "wraith_run.glb", function (r) {
+          MODEL.src = g.scene; MODEL.clips.walk = w.animations[0]; MODEL.clips.run = r.animations[0];
+          MODEL.ready = true;
+          entW.root.visible = false;
+          entRig = makeRig(); ent.add(entRig.root);
+        }, none);
+      }, none);
+    }, none);
+  }
 
   /* ---------- Level ---------- */
   var level = 1, best = 0;
@@ -645,7 +734,7 @@ Look at it to freeze it. Back away to win some distance.</p>
           bar.rotation.y = Math.atan2(qx, qz) + Math.PI / 2;
           levelGroup.add(bar);
         }
-      } else if (r1 < 0.34) {
+      } else if (false) {
         var pw = 0.9 + Math.random() * 1.2, pd = 0.8 + Math.random() * 1.0;
         var pud = new THREE.Mesh(new THREE.CircleGeometry(0.5, 20), puddleMat);
         pud.rotation.x = -Math.PI / 2; pud.scale.set(pw, pd, 1);
@@ -945,8 +1034,13 @@ Look at it to freeze it. Back away to win some distance.</p>
     });
   }
 
-  function poseEntity(h) { poseWraith(h.W, h.poseT); }
+  function poseEntity(h) { if (h.rig) return; poseWraith(h.W, h.poseT); }
   function makeHunted(x, z) {
+    if (MODEL.ready) {
+      var rg = makeRig(), g2 = new THREE.Group();
+      g2.add(rg.root); g2.rotation.order = "YXZ"; g2.position.set(x, 0, z); scene.add(g2);
+      return { g: g2, headG: null, arms: null, poseT: 0, tgt: null, alive: true, rig: rg };
+    }
     var g = new THREE.Group(), W = buildWraith();
     g.add(W.root); g.rotation.order = "YXZ"; g.position.set(x, 0, z); scene.add(g);
     var h = { g: g, W: W, headG: W.headG, arms: W.arms, poseT: Math.random() * 20, tgt: null, alive: true };
@@ -1329,6 +1423,7 @@ Look at it to freeze it. Back away to win some distance.</p>
   window.__step = function (n, dt) { for (var i = 0; i < n; i++) tick(dt || 0.05); draw(); return { state: state, gmode: gmode, level: level, caught: caught }; };
 
   var boot = function () {
+    loadModel();
     buildLevel(); resetPlayer(); ent.visible = false;
     updateHud();
     if (MANUAL) draw(); else requestAnimationFrame(frame);

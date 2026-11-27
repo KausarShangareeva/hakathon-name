@@ -21,3 +21,7 @@ Add `?demo` to the URL to watch an autopilot play all three levels and the armed
 Controls: WASD or arrows to walk, drag to look, Space to blink. On touch, use the on-screen buttons.
 
 Status: not yet play-tested. Speed, fog and lighting values are untuned.
+
+## Running locally
+
+The final character is loaded from `wraith.glb`, `wraith_walk.glb` and `wraith_run.glb`, so serve the folder over HTTP (for example `python3 -m http.server`) instead of opening `index.html` from disk. If the models fail to load, the built-in hooded figure is used instead.
