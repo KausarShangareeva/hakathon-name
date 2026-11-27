@@ -1,10 +1,14 @@
+<meta charset="utf-8">
 <title>Kymlinge Station</title>
 <meta name="claude:viewport-fit-sides" content="cover">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo+Narrow:wght@600;700&family=IBM+Plex+Mono:wght@400;500&display=swap">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/utils/SkeletonUtils.js"></script>
 <style>
+[hidden] { display: none !important; }
 /* Layout concept: one 3D view with the rules in a status bar beneath it. The only light is exit-sign green. */
 :root {
   --void: #030504;
@@ -147,7 +151,7 @@ Look at it to freeze it. Back away to win some distance.</p>
         <p class="o-cta" id="oCta">Press space or tap to start</p>
         <div class="choices" id="choices" hidden>
           <button class="ghost" id="leaveBtn" type="button">Leave the station</button>
-          <button class="ghost" id="huntBtn" type="button">Go back inside</button>
+          <button class="ghost" id="huntBtn" type="button">Go back inside, armed</button>
         </div>
       </div>
     </div>
@@ -342,6 +346,77 @@ Look at it to freeze it. Back away to win some distance.</p>
     headG.rotation.x = Math.sin(poseT * 0.8 + 2) * 0.25;
     arms[0].rotation.z = 0.08 + Math.sin(poseT * 0.7) * 0.35;
     arms[1].rotation.z = -0.08 - Math.sin(poseT * 0.9 + 1) * 0.35;
+  }
+
+
+  /* ---------- The draugr model: rigged GLB, walk and run clips ---------- */
+  // Files sit next to this page: draugr.glb (mesh, skeleton, textures), walk_clip.glb, run_clip.glb.
+  // If they cannot load (for example the page is opened from file://), the built-in draugr above stays in use.
+  var MODEL = { src: null, clips: {}, ready: false };
+  var entRig = null;
+  function glowTexture() {
+    var c = document.createElement("canvas"); c.width = c.height = 64;
+    var g = c.getContext("2d"), gr = g.createRadialGradient(32, 32, 0, 32, 32, 32);
+    gr.addColorStop(0, "rgba(255,70,50,1)"); gr.addColorStop(0.25, "rgba(255,40,30,0.55)"); gr.addColorStop(1, "rgba(255,0,0,0)");
+    g.fillStyle = gr; g.fillRect(0, 0, 64, 64);
+    return new THREE.CanvasTexture(c);
+  }
+  var eyeCoreMat = new THREE.MeshBasicMaterial({ color: 0xff2a1c, fog: false });
+  var eyeGlowMat = new THREE.SpriteMaterial({ map: glowTexture(), color: 0xff3a28, blending: THREE.AdditiveBlending, depthWrite: false, transparent: true, fog: false });
+  // Glowing red eyes, parented to the head bone so they follow the animation.
+  function addEyes(root) {
+    var head = root.getObjectByName("Head");
+    if (!head) return;
+    [-1, 1].forEach(function (sd) {
+      var core = new THREE.Mesh(new THREE.SphereGeometry(0.016, 8, 6), eyeCoreMat);
+      core.position.set(sd * EYE_X, EYE_Y, EYE_Z); head.add(core);
+      var glow = new THREE.Sprite(eyeGlowMat);
+      glow.scale.set(0.2, 0.2, 1); glow.position.copy(core.position); head.add(glow);
+    });
+  }
+  var EYE_X = 0.04, EYE_Y = 0.15, EYE_Z = 0.085;
+  function makeRig() {
+    var root = THREE.SkeletonUtils ? THREE.SkeletonUtils.clone(MODEL.src) : MODEL.src.clone(true);
+    root.traverse(function (o) { if (o.isMesh) o.frustumCulled = false; });
+    addEyes(root);
+    var mixer = new THREE.AnimationMixer(root);
+    var walk = mixer.clipAction(MODEL.clips.walk), run = mixer.clipAction(MODEL.clips.run);
+    walk.timeScale = 1.25; run.timeScale = 0.8;
+    walk.play(); run.play();
+    var rig = { root: root, mixer: mixer, walk: walk, run: run, w: 0, wantRun: false };
+    updateRig(rig, Math.random() * 0.9, false);
+    return rig;
+  }
+  // Advance the skeleton. Not calling this is what freezes the monster in its current pose.
+  function updateRig(rig, dt, wantRun) {
+    rig.w += Math.max(-dt * 3, Math.min(dt * 3, (wantRun ? 1 : 0) - rig.w));
+    rig.walk.setEffectiveWeight(1 - rig.w); rig.run.setEffectiveWeight(rig.w);
+    rig.mixer.update(dt);
+  }
+  function b64buf(str) {
+    var bin = atob(str), u = new Uint8Array(bin.length);
+    for (var i = 0; i < bin.length; i++) u[i] = bin.charCodeAt(i);
+    return u.buffer;
+  }
+  // Reads a GLB from embedded data (window.DRAUGR_DATA, used by the published page) or from a file next to this page.
+  function loadGlb(L, key, url, ok, bad) {
+    var D = window.DRAUGR_DATA;
+    if (D && D[key]) { try { L.parse(b64buf(D[key]), "", ok, bad); } catch (e) { bad(e); } }
+    else L.load(url, ok, undefined, bad);
+  }
+  function loadModel() {
+    if (!THREE.GLTFLoader) return;
+    var L = new THREE.GLTFLoader(), none = function () {};
+    loadGlb(L, "draugr", "draugr.glb", function (g) {
+      loadGlb(L, "walk", "walk_clip.glb", function (w) {
+        loadGlb(L, "run", "run_clip.glb", function (r) {
+          MODEL.src = g.scene; MODEL.clips.walk = w.animations[0]; MODEL.clips.run = r.animations[0];
+          MODEL.ready = true;
+          ent.children.forEach(function (c) { if (c !== entLight) c.visible = false; });
+          entRig = makeRig(); ent.add(entRig.root);
+        }, none);
+      }, none);
+    }, none);
   }
 
   /* ---------- Level ---------- */
@@ -577,7 +652,7 @@ Look at it to freeze it. Back away to win some distance.</p>
     if (state === "dead" || state === "end") { level = 1; gmode = "escape"; }
     else if (state === "won") { level++; }
     initAudio();
-    clearHunted(); lantern.visible = false;
+    clearHunted(); lantern.visible = false; axe.visible = false;
     pool.forEach(function (l) { l.visible = true; });
     el.blinkBtn.textContent = "Hold to blink"; el.choices.hidden = true;
     buildLevel(false); resetPlayer();
@@ -625,7 +700,7 @@ Look at it to freeze it. Back away to win some distance.</p>
     el.oTitle.textContent = "You reached the surface.";
     if (level >= 3) {
       state = "choice";
-      el.oBody.textContent = "Cold air. The stairs lead up to the street.\nBehind you, the station is still full of them.";
+      el.oBody.textContent = "Cold air. The stairs lead up to the street.\nBehind you, the station is still full of them.\nAn iron axe hangs by the stairs.";
       el.oCta.textContent = "";
     } else {
       el.oBody.textContent = "Level " + level + " cleared.\nThe next station is bigger.";
@@ -674,8 +749,17 @@ Look at it to freeze it. Back away to win some distance.</p>
     var dx = tgt.x - ex, dz = tgt.z - ez, dist = Math.hypot(dx, dz);
     var m = Math.min((2.8 + 0.12 * level) * (Math.hypot(ex - px, ez - pz) < 5 ? 1.2 : 1) * dt, dist);
     if (dist > 0.001) { ent.position.x += dx / dist * m; ent.position.z += dz / dist * m; }
-    ent.rotation.y = Math.atan2(px - ent.position.x, pz - ent.position.z);
-    poseT += dt * 0.9; pose();
+    var toP = Math.hypot(px - ent.position.x, pz - ent.position.z);
+    if (entRig) {
+      var face = (toP < 4 || dist < 0.001) ? Math.atan2(px - ent.position.x, pz - ent.position.z) : Math.atan2(dx, dz);
+      var da = face - ent.rotation.y; while (da > Math.PI) da -= 2 * Math.PI; while (da < -Math.PI) da += 2 * Math.PI;
+      ent.rotation.y += da * Math.min(1, dt * 8);
+      entRig.wantRun = entRig.wantRun ? toP < 11 : toP < 8;
+      updateRig(entRig, dt, entRig.wantRun);
+    } else {
+      ent.rotation.y = Math.atan2(px - ent.position.x, pz - ent.position.z);
+      poseT += dt * 0.9; pose();
+    }
   }
 
   function stepPlay(dt) {
@@ -720,17 +804,48 @@ Look at it to freeze it. Back away to win some distance.</p>
   /* ---------- The twist: hunt mode ---------- */
   var HUNT_N = 3;
   var gmode = "escape";           // escape | hunt
-  var hunted = [], huntSpawns = [], huntNear = null, caught = 0;
+  var hunted = [], huntSpawns = [], huntNear = null, caught = 0, finishT = 0;
   var lantern = new THREE.PointLight(0xff7a5a, 1.7, 10, 1.6);
   lantern.visible = false; camera.add(lantern);
+  var axeMat = new THREE.MeshStandardMaterial({ color: 0xaab6bc, roughness: 0.3, metalness: 0.85, emissive: 0x1a2024 });
+  var woodMat = new THREE.MeshStandardMaterial({ color: 0x5a4130, roughness: 0.9, emissive: 0x120c08 });
+  var axe = new THREE.Group();
+  var axeShaft = new THREE.Mesh(new THREE.CylinderGeometry(0.024, 0.03, 0.9, 8), woodMat); axe.add(axeShaft);
+  var axeHead = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.2, 0.3), axeMat); axeHead.position.set(0, 0.34, -0.12); axe.add(axeHead);
+  var axeEdge = new THREE.Mesh(new THREE.BoxGeometry(0.012, 0.3, 0.07), axeMat); axeEdge.position.set(0, 0.34, -0.31); axe.add(axeEdge);
+  axe.visible = false; camera.add(axe);
+  var swingT = -1;
+  function animAxe(dt) {
+    if (!axe.visible) return;
+    var sway = Math.sin(t * 1.7) * 0.015;
+    if (swingT >= 0) { swingT += dt / 0.4; if (swingT >= 1) swingT = -1; }
+    var sv = swingT < 0 ? 0 : Math.sin(swingT * Math.PI);
+    axe.rotation.set(0.15 - sv * 1.9 + sway, 0, -0.3 + sv * 0.4);
+    axe.position.set(0.36 - sv * 0.14, -0.4 + sway - sv * 0.06, -0.62 - sv * 0.2);
+  }
+  function animHunted(dt) {
+    hunted.forEach(function (h) {
+      if (h.dyingT === undefined) return;
+      h.dyingT += dt;
+      var f = Math.max(0, Math.min(1, h.dyingT / 0.7)); f = f * f * (3 - 2 * f);
+      h.g.rotation.x = -f * 1.52;
+      h.g.position.y = f * 0.12;
+    });
+  }
 
   function poseEntity(h) {
+    if (h.rig) return;
     h.headG.rotation.z = Math.sin(h.poseT * 1.3) * 0.5;
     h.headG.rotation.x = Math.sin(h.poseT * 0.8 + 2) * 0.25;
     h.arms[0].rotation.z = 0.08 + Math.sin(h.poseT * 0.7) * 0.35;
     h.arms[1].rotation.z = -0.08 - Math.sin(h.poseT * 0.9 + 1) * 0.35;
   }
   function makeHunted(x, z) {
+    if (MODEL.ready) {
+      var rg = makeRig(), g2 = new THREE.Group();
+      g2.add(rg.root); g2.rotation.order = "YXZ"; g2.position.set(x, 0, z); scene.add(g2);
+      return { g: g2, headG: null, arms: null, poseT: 0, tgt: null, alive: true, rig: rg };
+    }
     var g = new THREE.Group();
     [-1, 1].forEach(function (s) {
       var leg = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.055, 1.15, 8), skinMat);
@@ -760,14 +875,14 @@ Look at it to freeze it. Back away to win some distance.</p>
       hn.position.y = -1.32; ag.add(hn);
       g.add(ag); am.push(ag);
     });
-    g.position.set(x, 0, z); scene.add(g);
+    g.rotation.order = "YXZ"; g.position.set(x, 0, z); scene.add(g);
     var h = { g: g, headG: hg, arms: am, poseT: Math.random() * 20, tgt: null, alive: true };
     poseEntity(h);
     return h;
   }
   function clearHunted() {
     hunted.forEach(function (h) {
-      h.g.traverse(function (o) { if (o.geometry) o.geometry.dispose(); });
+      if (!h.rig) h.g.traverse(function (o) { if (o.geometry) o.geometry.dispose(); });
       scene.remove(h.g);
     });
     hunted = []; caught = 0; huntNear = null;
@@ -781,12 +896,12 @@ Look at it to freeze it. Back away to win some distance.</p>
     huntSpawns.forEach(function (s) { var h = makeHunted(s.x, s.z); h.g.rotation.y = Math.random() * 6.28; hunted.push(h); });
     strain = 0; forced = 0;
     pool.forEach(function (l) { l.visible = false; });
-    lantern.visible = true;
+    lantern.visible = true; axe.visible = true; swingT = -1;
     el.blinkBtn.textContent = "Hold to creep";
     el.choices.hidden = true;
     state = "intro"; stateT = 0;
     el.oTitle.textContent = "Now you are the hunter.";
-    el.oBody.textContent = "The dead fear a second death.\nThey run when you look at them, and hold still when you don't.\nCreep up with your eyes closed, or corner them in a dead end. Put all three down.";
+    el.oBody.textContent = "You carry an iron axe. The dead fear a second death.\nThey run when you look at them, and hold still when you don't.\nCreep up with your eyes closed. When one is within reach, you swing.\nPut all three down.";
     el.oCta.textContent = "Press space or tap to begin";
     el.overlay.hidden = false;
     updateHud();
@@ -795,7 +910,7 @@ Look at it to freeze it. Back away to win some distance.</p>
     state = "end"; stateT = 0; held = false; walkBtn = false; lid = 0; huntNear = null;
     el.blinkBtn.classList.remove("down"); el.walkBtn.classList.remove("down");
     el.oTitle.textContent = "The station is empty.";
-    el.oBody.textContent = "All three have had their second death.\nNow you are the thing waiting in the dark.";
+    el.oBody.textContent = "All three have had their second death.\nThe iron did it. Now you are the thing waiting in the dark.";
     el.oCta.textContent = "Press space or tap to play again";
     el.overlay.hidden = false;
     thump(0.4, 60, 0.6);
@@ -819,7 +934,7 @@ Look at it to freeze it. Back away to win some distance.</p>
       h.g.position.x += dx / dist * m; h.g.position.z += dz / dist * m;
       h.g.rotation.y = Math.atan2(dx, dz);
     }
-    h.poseT += dt * 3; poseEntity(h);
+    if (h.rig) updateRig(h.rig, dt, true); else { h.poseT += dt * 3; poseEntity(h); }
   }
   function stepHunt(dt) {
     var closed = held;
@@ -846,11 +961,14 @@ Look at it to freeze it. Back away to win some distance.</p>
         hx = h.g.position.x; hz = h.g.position.z;
       }
       var d = Math.hypot(hx - px, hz - pz);
-      if (d < 1.15) { h.alive = false; h.g.visible = false; caught++; thump(0.5, 90, 0.4); updateHud(); return; }
+      if (d < 1.7) {
+        h.alive = false; h.dyingT = -0.22; caught++; swingT = 0.0001;
+        burst("bandpass", 900, 2, 0.3, 0.3); thump(0.5, 90, 0.4); updateHud(); return;
+      }
       if (d < nd) { nd = d; near = { x: hx, z: hz, d: d }; }
     });
     seen = anySeen; huntNear = near;
-    if (!near && caught > 0) { finishHunt(); return; }
+    if (!near && caught > 0) { finishT += dt; if (finishT > 1.6) { finishT = 0; finishHunt(); return; } } else { finishT = 0; }
     lid += ((closed ? 0.9 : 0) - lid) * Math.min(1, dt * (closed ? 16 : 9));
     audioStep(dt, near ? nd : 99, false);
   }
@@ -1029,9 +1147,76 @@ Look at it to freeze it. Back away to win some distance.</p>
     el.lid.style.opacity = lid.toFixed(2);
     el.vig.style.opacity = (0.45 + (playing ? strain / 100 : 0) * 0.5 + (playing && !seen && gmode !== "hunt" && d < 7 ? (1 - d / 7) * 0.3 : 0)).toFixed(2);
   }
+  /* ---------- Autopilot, for ?demo ---------- */
+  var DEMO = /[?&]demo/.test(location.search), MANUAL = /[?&]manual/.test(location.search);
+  var demoT = 0, demoLook = 0, demoCool = 0, demoGrid = null, demoD = null, demoKey = "", demoAcc = 0;
+  function wrapA(a) { while (a > Math.PI) a -= 2 * Math.PI; while (a < -Math.PI) a += 2 * Math.PI; return a; }
+  function demoSteer(wx, wz, dt, go) {
+    var want = Math.atan2(-(wx - px), -(wz - pz)), dlt = wrapA(want - yaw);
+    yaw += Math.max(-4.5 * dt, Math.min(4.5 * dt, dlt));
+    pitch += (0 - pitch) * Math.min(1, dt * 4);
+    keys.KeyW = go && Math.abs(dlt) < 0.6;
+  }
+  function demoWaypoint(dmap, tx, tz) {
+    var cx = Math.floor(px / CELL), cz = Math.floor(pz / CELL);
+    if (dmap[cz][cx] <= 0) return { x: tx, z: tz };
+    var bd = dmap[cz][cx], bx = cx, bz = cz;
+    for (var k = 0; k < 4; k++) {
+      var nx = cx + DIRS[k][0], nz = cz + DIRS[k][1];
+      if (nx < 0 || nz < 0 || nx >= gw || nz >= gh || grid[nz][nx] !== 0) continue;
+      if (dmap[nz][nx] >= 0 && dmap[nz][nx] < bd) { bd = dmap[nz][nx]; bx = nx; bz = nz; }
+    }
+    return { x: (bx + 0.5) * CELL, z: (bz + 0.5) * CELL };
+  }
+  function demoTick(dt) {
+    if (!DEMO) return;
+    demoT += dt; demoCool -= dt;
+    if (state === "ready") { if (demoT > 2.2) { pressBlink(true); pressBlink(false); } return; }
+    if (state === "won") { if (stateT > 2.4) { pressBlink(true); pressBlink(false); } return; }
+    if (state === "dead") { if (stateT > 1.5) { pressBlink(true); pressBlink(false); } return; }
+    if (state === "choice") { if (stateT > 3.2) el.huntBtn.click(); return; }
+    if (state === "intro") { if (stateT > 4.0) { pressBlink(true); pressBlink(false); } return; }
+    if (state !== "play") return;
+    keys.KeyW = false;
+    if (gmode === "escape") {
+      if (demoGrid !== grid) { demoGrid = grid; demoD = bfs(Math.floor(exitPos.x / CELL), Math.floor(exitPos.z / CELL)).d; demoLook = 0; }
+      var de = Math.hypot(ent.position.x - px, ent.position.z - pz);
+      if (de < 2.0) {
+        // Demo only: send it to the cell farthest from the player instead of letting the bot die.
+        var fd = bfs(Math.floor(px / CELL), Math.floor(pz / CELL)).d, fb = null, fm = -1;
+        for (var fz = 0; fz < gh; fz++) for (var fx = 0; fx < gw; fx++) if (fd[fz][fx] > fm) { fm = fd[fz][fx]; fb = [fx, fz]; }
+        if (fb) ent.position.set((fb[0] + 0.5) * CELL, 0, (fb[1] + 0.5) * CELL);
+        dmap = null; dmapCx = -1; tgt = null;
+      }
+      if (demoLook > 0) {
+        demoLook -= dt;
+        demoSteer(ent.position.x, ent.position.z, dt, false);
+      } else {
+        if (de < 7 && demoCool <= 0 && !held) { demoLook = 1.1; demoCool = 3.2; }
+        var w = demoWaypoint(demoD, exitPos.x, exitPos.z);
+        demoSteer(w.x, w.z, dt, true);
+      }
+    } else {
+      var tgtH = null, bdist = 1e9;
+      hunted.forEach(function (h) {
+        if (!h.alive) return;
+        var d = Math.hypot(h.g.position.x - px, h.g.position.z - pz);
+        if (d < bdist) { bdist = d; tgtH = h; }
+      });
+      if (!tgtH) { held = false; return; }
+      var hx = tgtH.g.position.x, hz = tgtH.g.position.z;
+      held = bdist < 11;
+      el.blinkBtn.classList.toggle("down", held);
+      var hd = bfs(Math.floor(hx / CELL), Math.floor(hz / CELL)).d;
+      var w2 = demoWaypoint(hd, hx, hz);
+      demoSteer(w2.x, w2.z, dt, true);
+    }
+  }
+
   var last = performance.now();
-  function frame(now) {
-    var dt = Math.min(0.05, (now - last) / 1000); last = now; t += dt;
+  function tick(dt) {
+    t += dt;
+    demoTick(dt);
     if (state === "play") { if (gmode === "hunt") stepHunt(dt); else stepPlay(dt); }
     else if (state === "dead" || state === "won" || state === "choice" || state === "end" || state === "intro") {
       stateT += dt;
@@ -1042,18 +1227,31 @@ Look at it to freeze it. Back away to win some distance.</p>
         el.choices.hidden = false; el.leaveBtn.focus();
       }
     }
+    animAxe(dt); animHunted(dt);
+  }
+  function draw() {
     var bob = (!RM && state === "play" && walkT > 0 && stepT > 0 && !held && forced <= 0 && (keys.KeyW || keys.KeyS || keys.ArrowUp || keys.ArrowDown || walkBtn)) ? Math.sin(walkT * 8) * 0.03 : 0;
     camera.position.set(px, EYE + bob, pz);
     camera.rotation.set(pitch, yaw, 0);
     ui();
     renderer.render(scene, camera);
+  }
+  function frame(now) {
+    var dt = Math.min(0.05, (now - last) / 1000); last = now;
+    tick(dt); draw();
     requestAnimationFrame(frame);
   }
+  // Used by the recording harness: advance the game n fixed steps, then draw once.
+  window.__game = { start: function () { startGame(); }, ent: ent, MODEL: MODEL,
+    place: function (d, y) { yaw = y || 0; pitch = 0; var fx = -Math.sin(yaw), fz = -Math.cos(yaw); ent.visible = true; ent.position.set(px + fx * d, 0, pz + fz * d); ent.rotation.y = Math.atan2(-fx, -fz); },
+    rig: function () { return entRig; } };
+  window.__step = function (n, dt) { for (var i = 0; i < n; i++) tick(dt || 0.05); draw(); return { state: state, gmode: gmode, level: level, caught: caught }; };
 
   var boot = function () {
+    loadModel();
     buildLevel(); resetPlayer(); ent.visible = false;
     updateHud();
-    requestAnimationFrame(frame);
+    if (MANUAL) draw(); else requestAnimationFrame(frame);
   };
   if (document.fonts && document.fonts.load) {
     Promise.all([document.fonts.load("700 40px 'Archivo Narrow'")]).catch(function () {}).then(boot);
