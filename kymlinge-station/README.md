@@ -25,3 +25,7 @@ Status: not yet play-tested. Speed, fog and lighting values are untuned.
 ## Running locally
 
 The final character is loaded from `wraith.glb`, `wraith_walk.glb` and `wraith_run.glb`, so serve the folder over HTTP (for example `python3 -m http.server`) instead of opening `index.html` from disk. If the models fail to load, the built-in hooded figure is used instead.
+
+## Music
+
+`kymlinge-music.mp3` loops as background music. It starts on the first key press or tap, and the Sound button mutes it with everything else.

@@ -1270,7 +1270,18 @@ Look at it to freeze it. Back away to win some distance.</p>
       riser = AC.createGain(); riser.gain.value = 0;
       riserOsc = AC.createOscillator(); riserOsc.type = "sine"; riserOsc.frequency.value = 800;
       riserOsc.connect(riser); riser.connect(master); riserOsc.start();
+      startMusic();
     } catch (e) { AC = null; }
+  }
+  // Background music: loops under everything, swelling a little as the entity closes in.
+  function startMusic() {
+    if (musicEl) { musicEl.play && musicEl.play().catch(function () {}); return; }
+    try {
+      musicEl = new Audio("kymlinge-music.mp3"); musicEl.loop = true; musicEl.preload = "auto";
+      var src = AC.createMediaElementSource(musicEl);
+      musicGain = AC.createGain(); musicGain.gain.value = 0.32; src.connect(musicGain); musicGain.connect(master);
+      musicEl.play().catch(function () {});
+    } catch (e) { musicEl = null; }
   }
   function thump(vol, f, dur) {
     if (!AC || !soundOn) return;
@@ -1290,26 +1301,60 @@ Look at it to freeze it. Back away to win some distance.</p>
     s.connect(f); f.connect(g); g.connect(master); s.start(tt); s.stop(tt + dur + 0.1);
   }
   // Footsteps on concrete: a dull heel knock plus a short scuff, fed into a light tunnel echo (two quiet repeats).
-  var echoIn = null, stepAlt = 0, entStepD = 0, entLast = null;
+  var echoIn = null, stepAlt = 0, musicGain = null, musicEl = null;
+  // Concrete corridor reverb: a synthetic impulse response, decaying noise that loses its highs.
+  function makeReverb() {
+    var len = Math.floor(AC.sampleRate * 1.9), ir = AC.createBuffer(2, len, AC.sampleRate);
+    for (var ch = 0; ch < 2; ch++) {
+      var d = ir.getChannelData(ch), lp = 0;
+      for (var i = 0; i < len; i++) {
+        var u = i / len, n = (Math.random() * 2 - 1) * Math.pow(1 - u, 3.2);
+        lp += (n - lp) * (0.25 + 0.6 * (1 - u)); d[i] = lp;
+      }
+    }
+    var cv = AC.createConvolver(); cv.buffer = ir;
+    var wet = AC.createGain(); wet.gain.value = 0.7;
+    echoIn = AC.createGain(); echoIn.connect(cv); cv.connect(wet); wet.connect(master);
+  }
+  // A shoe on concrete: heel strike (sharp, bright), body thud, then the sole rolling down (a short scuff).
   function footstep(k, dist) {
     if (!AC || !soundOn || !noiseBuf) return;
-    if (!echoIn) {
-      echoIn = AC.createGain();
-      var dl = AC.createDelay(1), fb = AC.createGain(), lp = AC.createBiquadFilter(), wet = AC.createGain();
-      dl.delayTime.value = 0.23; fb.gain.value = 0.38; lp.type = "lowpass"; lp.frequency.value = 900; wet.gain.value = 0.55;
-      echoIn.connect(dl); dl.connect(lp); lp.connect(fb); fb.connect(dl); lp.connect(wet); wet.connect(master);
-    }
-    var near = 1 / (1 + dist * 0.55), vol = 0.2 * k * near;
+    if (!echoIn) makeReverb();
+    var vol = 0.28 * k * (1 + (Math.random() - 0.5) * 0.3) / (1 + dist * 0.55);
     if (vol < 0.004) return;
-    var tt = AC.currentTime, side = (stepAlt++ % 2) ? 1 : 0.9;
-    var o = AC.createOscillator(), g = AC.createGain(), s = AC.createBufferSource(), f = AC.createBiquadFilter(), g2 = AC.createGain();
-    o.type = "sine"; o.frequency.setValueAtTime(95 * side, tt); o.frequency.exponentialRampToValueAtTime(48, tt + 0.1);
-    g.gain.setValueAtTime(0.0001, tt); g.gain.exponentialRampToValueAtTime(vol * 1.3, tt + 0.008); g.gain.exponentialRampToValueAtTime(0.0001, tt + 0.13);
-    s.buffer = noiseBuf; f.type = "bandpass"; f.frequency.value = (dist > 0 ? 700 : 1300) * side; f.Q.value = 0.9;
-    g2.gain.setValueAtTime(0.0001, tt); g2.gain.exponentialRampToValueAtTime(vol * 0.9, tt + 0.006); g2.gain.exponentialRampToValueAtTime(0.0001, tt + 0.07);
-    o.connect(g); s.connect(f); f.connect(g2);
-    g.connect(master); g2.connect(master); g.connect(echoIn); g2.connect(echoIn);
-    o.start(tt); o.stop(tt + 0.2); s.start(tt, Math.random()); s.stop(tt + 0.1);
+    var tt = AC.currentTime, foot = (stepAlt++ % 2), pitch = 1 + (Math.random() - 0.5) * 0.25 + foot * 0.06;
+    var pan = AC.createStereoPanner ? AC.createStereoPanner() : null; if (pan) pan.pan.value = foot ? 0.2 : -0.2;
+    var out = AC.createGain(); out.gain.value = 1;
+    if (pan) { out.connect(pan); pan.connect(master); pan.connect(echoIn); } else { out.connect(master); out.connect(echoIn); }
+    function noise(type, freq, q, v, start, dur, off) {
+      var sc = AC.createBufferSource(); sc.buffer = noiseBuf;
+      var f = AC.createBiquadFilter(); f.type = type; f.frequency.value = freq * pitch; f.Q.value = q;
+      var g = AC.createGain(); g.gain.setValueAtTime(0.0001, tt + start);
+      g.gain.exponentialRampToValueAtTime(v, tt + start + 0.003); g.gain.exponentialRampToValueAtTime(0.0001, tt + start + dur);
+      sc.connect(f); f.connect(g); g.connect(out); sc.start(tt + start, off); sc.stop(tt + start + dur + 0.02);
+    }
+    noise("bandpass", 2600, 1.4, vol * 0.9, 0, 0.035, Math.random());        // heel click
+    noise("lowpass", 700, 0.8, vol * 0.7, 0.004, 0.09, Math.random());       // dull slap of the sole
+    noise("bandpass", 1500, 0.9, vol * 0.35, 0.07, 0.11, Math.random());     // scuff as the toe lands
+    var o = AC.createOscillator(), og = AC.createGain();
+    o.type = "sine"; o.frequency.setValueAtTime(130 * pitch, tt); o.frequency.exponentialRampToValueAtTime(55, tt + 0.1);
+    og.gain.setValueAtTime(0.0001, tt); og.gain.exponentialRampToValueAtTime(vol * 1.1, tt + 0.006); og.gain.exponentialRampToValueAtTime(0.0001, tt + 0.14);
+    o.connect(og); og.connect(out); o.start(tt); o.stop(tt + 0.18);
+  }
+  // Heart: a low "lub" with a click on top, then a softer "dub". Louder and closer together the nearer it is.
+  function heartBeat(close) {
+    if (!AC || !soundOn) return;
+    function beat(delay, f, v, dur) {
+      var tt = AC.currentTime + delay, o = AC.createOscillator(), o2 = AC.createOscillator(), g = AC.createGain();
+      o.type = "sine"; o2.type = "triangle";
+      o.frequency.setValueAtTime(f, tt); o.frequency.exponentialRampToValueAtTime(f * 0.55, tt + dur);
+      o2.frequency.setValueAtTime(f * 2.4, tt); o2.frequency.exponentialRampToValueAtTime(f * 1.2, tt + dur);
+      var g2 = AC.createGain(); g2.gain.value = 0.35; o2.connect(g2); g2.connect(g);
+      g.gain.setValueAtTime(0.0001, tt); g.gain.exponentialRampToValueAtTime(v, tt + 0.012); g.gain.exponentialRampToValueAtTime(0.0001, tt + dur);
+      o.connect(g); g.connect(master); o.start(tt); o2.start(tt); o.stop(tt + dur + 0.05); o2.stop(tt + dur + 0.05);
+    }
+    var v = 0.25 + close * 0.75;
+    beat(0, 62, v, 0.2); beat(0.15 - close * 0.05, 52, v * 0.7, 0.2);
   }
   // Breathing: your own, quick and shaky when it is near or you are walking, and its dry rasp once it is close.
   var breathT = 2, entBreathT = 3, inhale = true;
@@ -1361,10 +1406,10 @@ Look at it to freeze it. Back away to win some distance.</p>
       riser.gain.setTargetAtTime(rc * 0.05, AC.currentTime, 0.1);
       riserOsc.frequency.setTargetAtTime(700 + rc * 500, AC.currentTime, 0.1);
     }
+    if (musicGain) musicGain.gain.setTargetAtTime(0.3 + close * 0.2, AC.currentTime, 0.5);
     hbT -= dt;
     if (hbT <= 0 && close > 0.04) {
-      thump(0.1 + close * 0.45, 70, 0.22);
-      setTimeout(function () { thump(0.07 + close * 0.3, 60, 0.2); }, 170 - close * 70);
+      heartBeat(close);
       hbT = 1.3 - close * 1.0;
     } else if (hbT <= 0) { hbT = 0.5; }
   }
@@ -1567,7 +1612,7 @@ Look at it to freeze it. Back away to win some distance.</p>
   // Used by the recording harness: advance the game n fixed steps, then draw once.
   window.__game = { start: function () { startGame(); }, ent: ent, MODEL: MODEL,
     place: function (d, y) { yaw = y || 0; pitch = 0; var fx = -Math.sin(yaw), fz = -Math.cos(yaw); ent.visible = true; ent.position.set(px + fx * d, 0, pz + fz * d); ent.rotation.y = Math.atan2(-fx, -fz); },
-    rig: function () { return entRig; }, die: function () { die(); } };
+    rig: function () { return entRig; }, die: function () { die(); }, sfx: function () { footstep(1, 0); footstep(1.5, 8); heartBeat(0.8); return !!AC; } };
   window.__step = function (n, dt) { for (var i = 0; i < n; i++) tick(dt || 0.05); draw(); return { state: state, gmode: gmode, level: level, caught: caught }; };
 
   var boot = function () {
