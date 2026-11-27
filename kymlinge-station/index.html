@@ -1196,7 +1196,7 @@ Look at it to freeze it. Back away to win some distance.</p>
       var src = AC.createBufferSource(); src.buffer = buf; src.loop = true;
       var bp = AC.createBiquadFilter(); bp.type = "bandpass"; bp.frequency.value = 650; bp.Q.value = 1.1;
       scrape = AC.createGain(); scrape.gain.value = 0;
-      src.connect(bp); bp.connect(scrape); scrape.connect(master); src.start();
+      /* the looping noise bed (the fan-like scrape) is gone; noiseBuf is still used by the one-shot sounds */
       riser = AC.createGain(); riser.gain.value = 0;
       riserOsc = AC.createOscillator(); riserOsc.type = "sine"; riserOsc.frequency.value = 800;
       riserOsc.connect(riser); riser.connect(master); riserOsc.start();
@@ -1285,18 +1285,17 @@ Look at it to freeze it. Back away to win some distance.</p>
   }
   function audioStep(dt, d, moving) {
     if (!AC || !soundOn) return;
-    var close = Math.max(0, Math.min(1, 1 - d / 16));
+    var close = Math.max(0, Math.min(1, 1 - d / 20));
     if (riser) {
       var rc = moving && d < 7 ? 1 - d / 7 : 0;
       riser.gain.setTargetAtTime(rc * 0.05, AC.currentTime, 0.1);
       riserOsc.frequency.setTargetAtTime(700 + rc * 500, AC.currentTime, 0.1);
     }
-    if (scrape) scrape.gain.setTargetAtTime(moving ? Math.max(0, 1 - d / 18) * 0.22 : 0, AC.currentTime, 0.06);
     hbT -= dt;
     if (hbT <= 0 && close > 0.04) {
-      thump(0.1 + close * 0.3, 70, 0.22);
-      setTimeout(function () { thump(0.07 + close * 0.2, 60, 0.2); }, 170);
-      hbT = 1.15 - close * 0.7;
+      thump(0.1 + close * 0.45, 70, 0.22);
+      setTimeout(function () { thump(0.07 + close * 0.3, 60, 0.2); }, 170 - close * 70);
+      hbT = 1.3 - close * 1.0;
     } else if (hbT <= 0) { hbT = 0.5; }
   }
   el.soundBtn.addEventListener("click", function () {
