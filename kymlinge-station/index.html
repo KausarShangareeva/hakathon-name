@@ -4,9 +4,27 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo+Narrow:wght@600;700&family=IBM+Plex+Mono:wght@400;500&display=swap">
-<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/utils/SkeletonUtils.js"></script>
+<script src="vendor/three/three.min.js"></script>
+<!-- Compatible local toolkit; effects are available but not enabled automatically. -->
+<script src="vendor/three/GLTFLoader.js"></script>
+<script src="vendor/three/RGBELoader.js"></script>
+<script src="vendor/three/SkeletonUtils.js"></script>
+<script src="vendor/three/Pass.js"></script>
+<script src="vendor/three/CopyShader.js"></script>
+<script src="vendor/three/ShaderPass.js"></script>
+<script src="vendor/three/EffectComposer.js"></script>
+<script src="vendor/three/RenderPass.js"></script>
+<script src="vendor/three/LuminosityHighPassShader.js"></script>
+<script src="vendor/three/UnrealBloomPass.js"></script>
+<script src="vendor/three/FXAAShader.js"></script>
+<script src="vendor/three/FilmShader.js"></script>
+<script src="vendor/three/FilmPass.js"></script>
+<script src="vendor/three/VignetteShader.js"></script>
+<script src="vendor/three/ColorCorrectionShader.js"></script>
+<script src="vendor/howler.min.js"></script>
+<script src="vendor/lil-gui.umd.min.js"></script>
+<script src="vendor/gsap.min.js"></script>
+<script src="game-blood-rules.js?v=2026-11-27-controls"></script>
 <style>
 [hidden] { display: none !important; }
 /* Layout concept: one 3D view with the rules in a status bar beneath it. The only light is exit-sign green. */
@@ -52,6 +70,25 @@ h1 {
   letter-spacing: 0.08em; text-transform: uppercase; cursor: pointer;
 }
 .ghost:hover { color: var(--text-strong); border-color: var(--green-dim); }
+.game-controls {
+  display: flex; flex-wrap: wrap; gap: 10px; align-items: center;
+  position: sticky; top: 0; z-index: 6;
+  margin-inline: -16px; padding: 10px 16px;
+  background: rgba(3, 5, 4, 0.94); border-bottom: 1px solid var(--line);
+}
+.game-controls .ghost {
+  min-height: 52px; padding: 0 22px; font-size: 14px; letter-spacing: 0.12em;
+  color: var(--green); border: 1px solid var(--green);
+  background: rgba(12, 36, 22, 0.97);
+  text-shadow: 0 0 10px rgba(var(--green-rgb), 0.55);
+  box-shadow: inset 0 0 0 1px rgba(var(--green-rgb), 0.2), 0 0 18px rgba(var(--green-rgb), 0.2);
+}
+.game-controls .ghost:hover { color: #ffffff; border-color: var(--green); background: rgba(20, 56, 34, 0.97); }
+#restartBtn { color: #ffd9d2; border-color: #ff6a55; background: rgba(96, 24, 16, 0.97); text-shadow: 0 0 10px rgba(255, 90, 77, 0.6); box-shadow: inset 0 0 0 1px rgba(255, 110, 95, 0.35), 0 0 20px rgba(255, 90, 77, 0.28); }
+#restartBtn:hover { color: #fff; border-color: #ff8577; background: rgba(82, 20, 14, 0.97); }
+#pauseBtn::before { content: "\2759\2759  "; font-size: 11px; letter-spacing: 0; }
+#pauseBtn[aria-pressed="true"]::before { content: "\25B6  "; }
+#pauseLabel { font-size: 12px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--green); }
 
 .stage { border: 1px solid var(--line); background: var(--ink); overflow: hidden; user-select: none; -webkit-user-select: none; }
 .view { position: relative; aspect-ratio: 16 / 9; background: #000; touch-action: none; cursor: grab; }
@@ -132,6 +169,12 @@ h1 {
     <p class="sub">Find the exit. Every moment you look away from it, it gets closer.</p>
     <button class="ghost" id="soundBtn" type="button" aria-pressed="true">Sound on</button>
   </header>
+
+  <nav class="game-controls" aria-label="Game controls">
+    <button class="ghost" id="pauseBtn" type="button" aria-pressed="false">Pause game</button>
+    <button class="ghost" id="restartBtn" type="button">Restart game</button>
+    <span id="pauseLabel" role="status" hidden>Game paused</span>
+  </nav>
 
   <div class="stage" id="stage">
     <div class="view" id="view">
@@ -352,6 +395,98 @@ Look at it to freeze it. Back away to win some distance.</p>
     return t;
   }
   var doorTex = doorTexture();
+
+  /* ---------- Blood: wall sources and permanent sole impressions ---------- */
+  var bloodRules = window.BloodRules, bloodPools = [], bloodAge = 0, bloodTrail = null;
+  var bloodMeshes = [], printMesh = null, printCapacity = 256, printCount = 0;
+  var bloodTex = canvasTex(256, 256, function (c, w, h) {
+    c.fillStyle = "#a40a14"; c.fillRect(0, 0, w, h);
+    var g = c.createRadialGradient(w / 2, h * 0.38, 10, w / 2, h / 2, w * 0.7);
+    g.addColorStop(0, "#350208"); g.addColorStop(0.58, "#73050d"); g.addColorStop(1, "#c01823");
+    c.fillStyle = g; c.fillRect(0, 0, w, h);
+    for (var i = 0; i < 180; i++) {
+      c.fillStyle = i % 3 ? "rgba(40,0,3,0.08)" : "rgba(220,35,43,0.1)";
+      c.beginPath(); c.ellipse(Math.random() * w, Math.random() * h, 4 + Math.random() * 24, 1 + Math.random() * 6, 0, 0, Math.PI * 2); c.fill();
+    }
+    c.strokeStyle = "rgba(255,120,120,0.18)"; c.lineWidth = 1.5;
+    for (var j = 0; j < 5; j++) { c.beginPath(); c.ellipse(w * 0.5, h * (0.25 + j * 0.08), 28 + j * 16, 3 + j * 2, 0.1, 0.1, 1.8); c.stroke(); }
+  });
+  var bloodMat = new THREE.MeshStandardMaterial({ map: bloodTex, color: 0xd5202c,
+    emissive: 0x820913, emissiveMap: bloodTex, emissiveIntensity: 0.65, roughness: 0.19, metalness: 0.18,
+    polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 });
+  var soleTex = canvasTex(128, 256, function (c, w, h) {
+    c.clearRect(0, 0, w, h); c.fillStyle = "#fff";
+    c.beginPath(); c.ellipse(64, 85, 43, 68, -0.04, 0, Math.PI * 2); c.fill();
+    c.fillRect(30, 141, 67, 19); c.fillRect(31, 170, 65, 58);
+    c.globalCompositeOperation = "destination-out";
+    c.lineWidth = 4; c.strokeStyle = "#000";
+    for (var y = 33; y < 142; y += 19) {
+      c.beginPath(); c.moveTo(20, y); c.lineTo(63, y + 10); c.lineTo(108, y); c.stroke();
+    }
+    c.fillRect(60, 30, 6, 112); c.fillRect(31, 191, 65, 6); c.fillRect(31, 212, 65, 6);
+    for (var i = 0; i < 25; i++) { c.globalAlpha = 0.15 + Math.random() * 0.35; c.fillRect(Math.random() * w, Math.random() * h, 2 + Math.random() * 3, 2 + Math.random() * 4); }
+    c.globalAlpha = 1; c.globalCompositeOperation = "source-over";
+  });
+  var printMat = new THREE.MeshBasicMaterial({ map: soleTex, color: 0xe52b35, transparent: true, side: THREE.DoubleSide,
+    alphaTest: 0.035, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -3, polygonOffsetUnits: -3 });
+  printMat.onBeforeCompile = function (shader) {
+    // Instance strength controls coverage only; multiplying RGB as well made later prints almost black.
+    shader.fragmentShader = shader.fragmentShader.replace("#include <color_fragment>", "");
+    shader.fragmentShader = shader.fragmentShader.replace("#include <alphatest_fragment>",
+      "#ifdef USE_COLOR\n diffuseColor.a *= vColor.r;\n #endif\n #include <alphatest_fragment>");
+  };
+  var printDummy = new THREE.Object3D();
+  function makePrintMesh(capacity) {
+    var mesh = new THREE.InstancedMesh(new THREE.PlaneGeometry(0.28, 0.52), printMat, capacity);
+    // Allocate per-print colors before the first (empty) render so r128 compiles that shader path.
+    mesh.setColorAt(0, new THREE.Color(1, 1, 1));
+    mesh.count = 0; mesh.frustumCulled = false; mesh.renderOrder = 2; return mesh;
+  }
+  function addBloodPrint(p) {
+    if (!printMesh) return;
+    if (printCount >= printCapacity) {
+      var old = printMesh; printCapacity *= 2; printMesh = makePrintMesh(printCapacity);
+      var matrix = new THREE.Matrix4(), color = new THREE.Color();
+      for (var i = 0; i < printCount; i++) { old.getMatrixAt(i, matrix); printMesh.setMatrixAt(i, matrix); old.getColorAt(i, color); printMesh.setColorAt(i, color); }
+      levelGroup.remove(old); old.geometry.dispose(); levelGroup.add(printMesh);
+    }
+    // Plane's top points forward (-Z); rotate around world Y, not its local normal.
+    printDummy.position.set(p.x, 0.022, p.z);
+    printDummy.quaternion.setFromAxisAngle(new THREE.Vector3(0, 1, 0), p.direction + Math.PI);
+    printDummy.quaternion.multiply(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), -Math.PI / 2));
+    printDummy.scale.set(p.side < 0 ? -1 : 1, 1, 1); printDummy.updateMatrix();
+    printMesh.setMatrixAt(printCount, printDummy.matrix);
+    var c = new THREE.Color(p.strength, p.strength, p.strength);
+    printMesh.setColorAt(printCount, c); printCount++; printMesh.count = printCount;
+    printMesh.instanceMatrix.needsUpdate = true; printMesh.instanceColor.needsUpdate = true;
+  }
+  function buildBlood() {
+    bloodAge = 0; bloodPools = bloodRules.placePools(grid, CELL, startPos, Math.random);
+    bloodMeshes = []; printCount = 0; printCapacity = 256;
+    printMesh = makePrintMesh(printCapacity); levelGroup.add(printMesh);
+    bloodPools.forEach(function (p) {
+      var shape = new THREE.Shape();
+      p.outline.forEach(function (v, i) { if (i === 0) shape.moveTo(v.x, -v.z); else shape.lineTo(v.x, -v.z); }); shape.closePath();
+      var group = new THREE.Group(); group.position.set(p.x, 0.012, p.z); group.rotation.y = Math.atan2(p.nx, p.nz);
+      var mesh = new THREE.Mesh(new THREE.ShapeGeometry(shape), bloodMat); mesh.rotation.x = -Math.PI / 2;
+      group.add(mesh); group.scale.set(p.width, 1, bloodRules.depthAt(p, 0)); levelGroup.add(group); bloodMeshes.push(group);
+      // Small dark-red leak line exactly at the wall/floor seam.
+      var seam = new THREE.Mesh(new THREE.BoxGeometry(p.width * 0.6, 0.045, 0.025), bloodMat);
+      seam.position.set(p.x + p.nx * 0.01, 0.022, p.z + p.nz * 0.01); seam.rotation.y = group.rotation.y; levelGroup.add(seam);
+    });
+  }
+  function updateBlood(dt) {
+    bloodAge += dt;
+    bloodMeshes.forEach(function (mesh, i) { mesh.scale.z = bloodRules.depthAt(bloodPools[i], bloodAge); });
+  }
+  function bloodMovement(x, z) {
+    if (!bloodTrail) return;
+    var events = bloodRules.advance(bloodTrail, x, z, bloodPools, bloodAge);
+    events.forEach(function (event) {
+      if (event.print && !solid(event.print.x, event.print.z)) addBloodPrint(event.print);
+      if (event.wet) wetFootstep(gmode === "hunt" && held ? 0.45 : 1);
+    });
+  }
 
   /* ---------- Language that goes wrong ---------- */
   var NAMES = ["T-Centralen", "Slussen", "Gamla stan", "Hötorget", "Rådhuset", "Fridhemsplan", "Odenplan", "Mariatorget", "Hornstull", "Stadion", "Östermalmstorg", "Zinkensdamm"];
@@ -736,6 +871,7 @@ Look at it to freeze it. Back away to win some distance.</p>
     fl.rotation.x = -Math.PI / 2; fl.position.set(gw * CELL / 2, 0, gh * CELL / 2); levelGroup.add(fl);
     var ce = new THREE.Mesh(new THREE.PlaneGeometry(gw * CELL, gh * CELL), ceilMat);
     ce.rotation.x = Math.PI / 2; ce.position.set(gw * CELL / 2, WALL_H, gh * CELL / 2); levelGroup.add(ce);
+    buildBlood();
 
     // signs
     var p = Math.max(0, Math.min(1, (level - 2) / 4));
@@ -883,6 +1019,7 @@ Look at it to freeze it. Back away to win some distance.</p>
   var dmap = null, dmapCx = -1, dmapCz = -1, tgt = null;
   var signs = [], reading = false, blankTex = null;
   var plates = [], plateT = 7, ambT = 9;
+  var paused = false;
   var CREEPY = ["DU ÄR INTE ENSAM", "SOV INTE", "SISTA TÅGET", "INGEN UTGÅNG", "SILVERPILEN", "KYMLINGE", "GENGÅNGARE", "HÖGEN"];
 
   // A sign only shows its arrow while you look straight at it, which means looking away from the entity.
@@ -908,6 +1045,7 @@ Look at it to freeze it. Back away to win some distance.</p>
 
   function resetPlayer() {
     px = startPos.x; pz = startPos.z; yaw = -Math.PI / 2; pitch = 0;
+    bloodTrail = bloodRules.createTrail(px, pz);
     forced = 0; lid = 0; strain = 0; seen = false; walkT = 0; stepT = 0; hbT = 1;
     ent.position.set(spawn.x, 0, spawn.z); ent.rotation.y = 0; ent.visible = true;
     dmap = null; dmapCx = -1; dmapCz = -1; tgt = null; poseT = Math.random() * 20; pose();
@@ -1010,6 +1148,7 @@ Look at it to freeze it. Back away to win some distance.</p>
   function tryMove(dx, dz) {
     if (!blocked(px + dx, pz)) px += dx;
     if (!blocked(px, pz + dz)) pz += dz;
+    bloodMovement(px, pz);
   }
   function los(x0, z0, x1, z1) {
     var dx = x1 - x0, dz = z1 - z0, n = Math.ceil(Math.hypot(dx, dz) / 0.25);
@@ -1083,7 +1222,7 @@ Look at it to freeze it. Back away to win some distance.</p>
         tryMove((fx * fw + rx * sd) * k * dt, (fz * fw + rz * sd) * k * dt);
         walking = true; walkT += dt;
         stepT -= dt;
-        if (stepT <= 0) { footstep(1, 0); stepT = 0.52; }
+        if (stepT <= 0) { if (!inBlood()) footstep(1, 0); stepT = 0.52; }
       }
     }
 
@@ -1216,7 +1355,7 @@ Look at it to freeze it. Back away to win some distance.</p>
       var k = (closed ? 1.6 : 3.6) * (fw < 0 ? 0.6 : 1) / Math.max(1, len);
       tryMove((fx * fw + rx * sd) * k * dt, (fz * fw + rz * sd) * k * dt);
       walkT += dt; stepT -= dt;
-      if (stepT <= 0) { footstep(closed ? 0.45 : 1, 0); stepT = closed ? 0.9 : 0.45; }
+      if (stepT <= 0) { if (!inBlood()) footstep(closed ? 0.45 : 1, 0); stepT = closed ? 0.9 : 0.45; }
     }
     var pcx = Math.floor(px / CELL), pcz = Math.floor(pz / CELL);
     if (pcx !== dmapCx || pcz !== dmapCz) { dmap = bfs(pcx, pcz).d; dmapCx = pcx; dmapCz = pcz; }
@@ -1251,11 +1390,29 @@ Look at it to freeze it. Back away to win some distance.</p>
 
   /* ---------- Audio ---------- */
   var AC = null, master = null, scrape = null, soundOn = true, noiseBuf = null, riser = null, riserOsc = null;
+  var wetBuffer = null, wetBus = null, wetAnalyser = null, wetVoices = 0, wetPlayed = 0, wetPeak = 0;
+  function inBlood() { return bloodPools.some(function (p) { return bloodRules.contains(p, px, pz, bloodAge); }); }
+  function wetFootstep(volume) {
+    if (!AC || !soundOn || document.hidden) return;
+    if (AC.state === "suspended") AC.resume();
+    if (!wetBuffer) { burst("lowpass", 1300, 0.8, 0.13 * volume, 0.22); return; }
+    if (wetVoices >= 4) return;
+    var source = AC.createBufferSource(), gain = AC.createGain();
+    source.buffer = wetBuffer; source.playbackRate.value = 0.86 + Math.random() * 0.22;
+    gain.gain.value = volume * 0.65; source.connect(gain); gain.connect(wetBus);
+    wetVoices++; wetPlayed++; source.onended = function () { wetVoices--; source.disconnect(); gain.disconnect(); }; source.start();
+  }
   function initAudio() {
     if (AC || !soundOn) return;
     try {
       AC = new (window.AudioContext || window.webkitAudioContext)();
       master = AC.createGain(); master.gain.value = 0.9; master.connect(AC.destination);
+      wetBus = AC.createGain(); wetBus.gain.value = 0.8;
+      wetAnalyser = AC.createAnalyser(); wetAnalyser.fftSize = 512;
+      wetBus.connect(wetAnalyser); wetAnalyser.connect(master);
+      fetch("audio/wet-step.ogg").then(function (r) { if (!r.ok) throw new Error("wet step audio"); return r.arrayBuffer(); })
+        .then(function (data) { return AC.decodeAudioData(data); }).then(function (buffer) { wetBuffer = buffer; })
+        .catch(function () { /* Filtered water-noise fallback keeps footsteps available offline. */ });
       [48, 48.7].forEach(function (f) {
         var o = AC.createOscillator(); o.type = "sine"; o.frequency.value = f;
         var g = AC.createGain(); g.gain.value = 0.05; o.connect(g); g.connect(master); o.start();
@@ -1377,7 +1534,30 @@ Look at it to freeze it. Back away to win some distance.</p>
   });
 
   /* ---------- Input ---------- */
+  function setPaused(value) {
+    paused = value;
+    held = false; walkBtn = false; keys = {}; drag = null;
+    el.blinkBtn.classList.remove("down"); el.walkBtn.classList.remove("down");
+    $("pauseBtn").textContent = paused ? "Resume game" : "Pause game";
+    $("pauseBtn").setAttribute("aria-pressed", String(paused));
+    $("pauseLabel").hidden = !paused;
+    if (AC) { if (paused) AC.suspend(); else AC.resume(); }
+  }
+  function restartGame() {
+    setPaused(false); level = 1; gmode = "escape"; state = "ready";
+    startGame();
+  }
+  $("pauseBtn").addEventListener("click", function () { setPaused(!paused); });
+  $("restartBtn").addEventListener("click", restartGame);
+  // Keep keyboard input inside the game frame after any click or tap.
+  window.focus();
+  document.addEventListener("pointerdown", function () { window.focus(); }, true);
+  document.addEventListener("click", function (e) {
+    var b = e.target && e.target.closest && e.target.closest("button");
+    if (b) b.blur();
+  }, true);
   window.addEventListener("keydown", function (e) {
+    if (paused) return;
     var c = e.code;
     if (c === "Space" || c === "ArrowUp" || c === "ArrowDown" || c === "ArrowLeft" || c === "ArrowRight") e.preventDefault();
     if (c === "Space") { if (!e.repeat) pressBlink(true); return; }
@@ -1396,7 +1576,7 @@ Look at it to freeze it. Back away to win some distance.</p>
     ["pointerup", "pointercancel", "lostpointercapture"].forEach(function (ev) { node.addEventListener(ev, off); });
   }
   hold(el.blinkBtn, function () { pressBlink(true); }, function () { pressBlink(false); });
-  hold(el.walkBtn, function () { if (state === "play") { walkBtn = true; el.walkBtn.classList.add("down"); } },
+  hold(el.walkBtn, function () { if (!paused && state === "play") { walkBtn = true; el.walkBtn.classList.add("down"); } },
     function () { walkBtn = false; el.walkBtn.classList.remove("down"); });
 
   var drag = null;
@@ -1404,6 +1584,7 @@ Look at it to freeze it. Back away to win some distance.</p>
     if (e.target.closest && e.target.closest(".choices")) return;
     e.preventDefault();
     try { el.view.setPointerCapture(e.pointerId); } catch (err) {}
+    if (paused) return;
     if (state !== "play") { pressBlink(true); drag = null; return; }
     drag = { id: e.pointerId, x: e.clientX, y: e.clientY };
   });
@@ -1527,7 +1708,7 @@ Look at it to freeze it. Back away to win some distance.</p>
   function tick(dt) {
     t += dt;
     demoTick(dt);
-    if (state === "play") { if (gmode === "hunt") stepHunt(dt); else stepPlay(dt); }
+    if (!paused && state === "play") { updateBlood(dt); if (gmode === "hunt") stepHunt(dt); else stepPlay(dt); }
     else if (state === "dead" || state === "won" || state === "choice" || state === "end" || state === "intro") {
       stateT += dt;
       if (stateT > 1.0 && el.overlay.hidden) {
@@ -1558,9 +1739,11 @@ Look at it to freeze it. Back away to win some distance.</p>
     if (shakeT > 0 && state === "dead") { var sa = Math.min(1, shakeT) * 0.05; camera.rotation.x += (Math.random() - 0.5) * sa; camera.rotation.y += (Math.random() - 0.5) * sa; camera.rotation.z = (Math.random() - 0.5) * sa * 1.5; }
     ui();
     renderer.render(scene, camera);
+    el.gl.dataset.sceneReady = "1";
+    if (wetAnalyser) { var samples = new Float32Array(wetAnalyser.fftSize); wetAnalyser.getFloatTimeDomainData(samples); for (var i = 0; i < samples.length; i++) wetPeak = Math.max(wetPeak, Math.abs(samples[i])); }
   }
   function frame(now) {
-    var dt = Math.min(0.05, (now - last) / 1000); last = now;
+    var dt = paused ? 0 : Math.min(0.05, (now - last) / 1000); last = now;
     tick(dt); draw();
     requestAnimationFrame(frame);
   }
@@ -1569,6 +1752,22 @@ Look at it to freeze it. Back away to win some distance.</p>
     place: function (d, y) { yaw = y || 0; pitch = 0; var fx = -Math.sin(yaw), fz = -Math.cos(yaw); ent.visible = true; ent.position.set(px + fx * d, 0, pz + fz * d); ent.rotation.y = Math.atan2(-fx, -fz); },
     rig: function () { return entRig; }, die: function () { die(); } };
   window.__step = function (n, dt) { for (var i = 0; i < n; i++) tick(dt || 0.05); draw(); return { state: state, gmode: gmode, level: level, caught: caught }; };
+
+  // Local-preview-only probes for the blood system; never exposed on the published app.
+  if (location.hostname === "localhost" || location.hostname === "127.0.0.1") {
+    Object.defineProperties(window.__game, {
+      blood: { get: function () { return { age: bloodAge, pools: bloodPools, prints: bloodTrail ? bloodTrail.prints : [], renderedPrints: printCount,
+        remaining: bloodTrail ? bloodTrail.remaining : 0, wetPlayed: wetPlayed, audioReady: !!wetBuffer, wetPeak: wetPeak }; } },
+      navigation: { get: function () { return { grid: grid, cell: CELL }; } },
+      player: { get: function () { return { x: px, z: pz }; } }
+    });
+    window.__game.hunt = startHunt;
+    window.__game.growBlood = function (seconds) { updateBlood(seconds); };
+    window.__game.move = function (dx, dz) { tryMove(dx, dz); };
+    window.__game.position = function (x, z, angle, tilt) { px = x; pz = z; yaw = angle; pitch = tilt; bloodTrail.x = x; bloodTrail.z = z; bloodTrail.distance = 0; };
+    window.__game.render = function () { camera.position.set(px, EYE, pz); camera.rotation.set(pitch, yaw, 0); renderer.render(scene, camera); };
+    window.__game.wetStep = function () { wetFootstep(1); };
+  }
 
   var boot = function () {
     loadModel();
