@@ -827,7 +827,7 @@ Look at it to freeze it. Back away to win some distance.</p>
       var gdi = Math.floor(Math.random() * 4), gdx = DIRS[gdi][0], gdz = DIRS[gdi][1];
       if (grid[gz2 + gdz][gx2 + gdx] !== 0) continue;
       var wxp = (gx2 + 0.5) * CELL + gdx * (CELL / 2 + 0.012), wzp = (gz2 + 0.5) * CELL + gdz * (CELL / 2 + 0.012);
-      if (extras % 3 === 2) {
+      if (false) {
         var lamp = new THREE.Mesh(new THREE.SphereGeometry(0.07, 8, 6), redLampMat);
         lamp.position.set(wxp - gdx * -0.02, 1.4, wzp - gdz * -0.02); levelGroup.add(lamp);
       } else {
@@ -930,7 +930,7 @@ Look at it to freeze it. Back away to win some distance.</p>
   }
   function pressBlink(v) {
     if (state === "ready") { if (v) startGame(); return; }
-    if (state === "dead") { if (v && stateT > 0.9) startGame(); return; }
+    if (state === "dead") { if (v && stateT > 2.9) startGame(); return; }
     if (state === "won") { if (v && stateT > 0.6) startGame(); return; }
     if (state === "choice") return;
     if (state === "end") { if (v && stateT > 0.9) startGame(); return; }
@@ -946,6 +946,7 @@ Look at it to freeze it. Back away to win some distance.</p>
     el.level.textContent = gmode === "hunt" ? "Hunt · second deaths " + caught + "/" + (hunted.length || HUNT_N) : "Level " + level;
     el.best.textContent = "Best " + best;
   }
+  var camYaw = 0, camRoll = 0;
   var scareD = 0, scareFx = 0, scareFz = 0, scareRoot = false, flashEl = null, shakeT = 0;
   function scareFlash() {
     if (!flashEl) {
@@ -956,7 +957,7 @@ Look at it to freeze it. Back away to win some distance.</p>
     flashEl.style.transition = "none"; flashEl.style.background = "#fff"; flashEl.style.opacity = "0.95";
     setTimeout(function () { flashEl.style.transition = "opacity .5s ease-out, background .5s"; flashEl.style.background = "#a00000"; flashEl.style.opacity = "0.55"; }, 70);
     setTimeout(function () { flashEl.style.transition = "opacity 1.4s ease-in"; flashEl.style.opacity = "0.18"; }, 600);
-    shakeT = 1.1;
+    shakeT = 3;
   }
   var scareEl = null;
   function loadScare() {
@@ -979,14 +980,18 @@ Look at it to freeze it. Back away to win some distance.</p>
   }
   // The lunge: it covers the last three metres in a tenth of a second, the camera punches in and shakes.
   // Death glitch: a copy of the frame drawn on top with torn horizontal bands, RGB-split ghosts and scanlines.
-  var glitchC = null, glitchX = null;
+  var glitchC = null, glitchX = null, vigEl = null;
   function glitchDraw() {
     if (!glitchC) {
       glitchC = document.createElement("canvas");
       glitchC.style.cssText = "position:absolute;inset:0;width:100%;height:100%;pointer-events:none;display:none";
       el.gl.appendChild(glitchC); glitchX = glitchC.getContext("2d");
     }
-    if (state !== "dead") { glitchC.style.display = "none"; return; }
+    if (!vigEl) { vigEl = document.createElement("div"); vigEl.style.cssText = "position:absolute;inset:0;pointer-events:none;display:none"; el.gl.appendChild(vigEl); }
+    if (state !== "dead") { glitchC.style.display = "none"; vigEl.style.display = "none"; return; }
+    var vu = Math.max(0, Math.min(1, (stateT - 0.35) / 2.3)), R = 130 - 140 * vu * vu * (3 - 2 * vu);
+    vigEl.style.display = "block";
+    vigEl.style.background = "radial-gradient(circle at 50% 50%, rgba(0,0,0,0) " + Math.max(0, R - 30) + "%, rgba(70,0,0,0.85) " + Math.max(1, R) + "%, #000 " + Math.max(2, R + 22) + "%)";
     var src = renderer.domElement, w = src.width, h = src.height;
     if (glitchC.width !== w || glitchC.height !== h) { glitchC.width = w; glitchC.height = h; }
     glitchC.style.display = "block";
@@ -1010,9 +1015,10 @@ Look at it to freeze it. Back away to win some distance.</p>
   function scareTick(dt) {
     if (state !== "dead") { if (shakeT > 0) shakeT = 0; camera.fov !== 72 && (camera.fov = 72, camera.updateProjectionMatrix()); return; }
     var k = Math.min(1, stateT / 0.11), e = k * k * (3 - 2 * k), d = scareD + (0.42 - scareD) * e;
+    if (stateT > 0.11) d = 0.3 - 0.22 * Math.min(1, (stateT - 0.11) / 0.4) + 0.12 * Math.sin(stateT * 20) * Math.max(0, 1 - stateT / 2.5);
     ent.position.set(px + scareFx * d, Math.max(0, Math.sin(k * Math.PI) * 0.15), pz + scareFz * d);
     if (entRig) { entRig.mixer.update(dt * 2.5); }
-    var f = 72 + 22 * e; if (camera.fov !== f) { camera.fov = f; camera.updateProjectionMatrix(); }
+    var f = 72 + 22 * e + (stateT > 0.11 ? Math.sin(stateT * 17) * 7 * Math.max(0, 1 - stateT / 2.5) : 0); if (camera.fov !== f) { camera.fov = f; camera.updateProjectionMatrix(); }
     if (shakeT > 0) shakeT -= dt;
   }
   function die() {
@@ -1570,7 +1576,7 @@ Look at it to freeze it. Back away to win some distance.</p>
     demoT += dt; demoCool -= dt;
     if (state === "ready") { if (demoT > 2.2) { pressBlink(true); pressBlink(false); } return; }
     if (state === "won") { if (stateT > 2.4) { pressBlink(true); pressBlink(false); } return; }
-    if (state === "dead") { if (stateT > 1.5) { pressBlink(true); pressBlink(false); } return; }
+    if (state === "dead") { if (stateT > 3.1) { pressBlink(true); pressBlink(false); } return; }
     if (state === "choice") { if (stateT > 3.2) el.huntBtn.click(); return; }
     if (state === "intro") { if (stateT > 4.0) { pressBlink(true); pressBlink(false); } return; }
     if (state !== "play") return;
@@ -1617,7 +1623,7 @@ Look at it to freeze it. Back away to win some distance.</p>
     if (state === "play") { if (gmode === "hunt") stepHunt(dt); else stepPlay(dt); }
     else if (state === "dead" || state === "won" || state === "choice" || state === "end" || state === "intro") {
       stateT += dt;
-      if (stateT > 1.0 && el.overlay.hidden) {
+      if (stateT > (state === "dead" ? 2.8 : 1.0) && el.overlay.hidden) {
         el.overlay.hidden = false;
         if (state === "choice") { el.choices.hidden = false; el.leaveBtn.focus(); }
       } else if (state === "choice" && stateT > 1.0 && el.choices.hidden) {
@@ -1639,10 +1645,29 @@ Look at it to freeze it. Back away to win some distance.</p>
     animAxe(dt); animHunted(dt); scareTick(dt); breathTick(dt); mistTick(t);
   }
   function draw() {
-    var bob = (!RM && state === "play" && walkT > 0 && stepT > 0 && !held && forced <= 0 && (keys.KeyW || keys.KeyS || keys.ArrowUp || keys.ArrowDown || walkBtn)) ? Math.sin(walkT * 8) * 0.03 : 0;
-    camera.position.set(px, EYE + bob, pz);
-    camera.rotation.set(pitch, yaw, 0);
-    if (shakeT > 0 && state === "dead") { var sa = Math.min(1, shakeT) * 0.05; camera.rotation.x += (Math.random() - 0.5) * sa; camera.rotation.y += (Math.random() - 0.5) * sa; camera.rotation.z = (Math.random() - 0.5) * sa * 1.5; }
+    var moving = !RM && state === "play" && walkT > 0 && stepT > 0 && !held && forced <= 0 && (keys.KeyW || keys.KeyS || keys.ArrowUp || keys.ArrowDown || keys.KeyA || keys.KeyD || walkBtn);
+    var cx = 0, cy = 0, cz = 0, rx = 0, ry = 0, rz = 0;
+    if (!RM && state === "play") {
+      var rgx = Math.cos(yaw), rgz = -Math.sin(yaw), dyaw = camYaw - yaw; camYaw = yaw;
+      camRoll += ((Math.max(-0.05, Math.min(0.05, dyaw * 2.5))) - camRoll) * 0.12;          // lean into turns
+      cy += Math.sin(t * 1.1) * 0.012; rz += Math.sin(t * 0.7) * 0.006 + camRoll; ry += Math.sin(t * 0.45) * 0.004;   // slow breathing sway
+      if (moving) {
+        cy += Math.sin(walkT * 8) * 0.045; rz += Math.sin(walkT * 4) * 0.014; rx += Math.sin(walkT * 8 + 1) * 0.01;
+        cx += rgx * Math.sin(walkT * 4) * 0.035; cz += rgz * Math.sin(walkT * 4) * 0.035;
+      }
+      var dn = ent.visible ? Math.hypot(ent.position.x - px, ent.position.z - pz) : 99;
+      if (dn < 7) { var fr = (1 - dn / 7) * 0.006; rx += (Math.random() - 0.5) * fr; ry += (Math.random() - 0.5) * fr; rz += (Math.random() - 0.5) * fr * 1.5; }
+    }
+    camera.position.set(px + cx, EYE + cy, pz + cz);
+    camera.rotation.set(pitch + rx, yaw + ry, rz);
+    if (state === "dead") {
+      // Being eaten: the camera is thrown around, harder at first, easing off as the dark closes in.
+      var env = Math.max(0, 1 - stateT / 2.8), k2 = 0.2 + 0.8 * env;
+      camera.rotation.x += (Math.random() - 0.5) * 0.3 * k2 + Math.sin(stateT * 13) * 0.22 * env;
+      camera.rotation.y += (Math.random() - 0.5) * 0.3 * k2 + Math.sin(stateT * 9 + 1) * 0.18 * env;
+      camera.rotation.z = (Math.random() - 0.5) * 0.35 * k2 + Math.sin(stateT * 7) * 0.3 * env;
+      camera.position.x += (Math.random() - 0.5) * 0.14 * k2; camera.position.y += (Math.random() - 0.5) * 0.12 * k2; camera.position.z += (Math.random() - 0.5) * 0.14 * k2;
+    }
     ui();
     renderer.render(scene, camera);
     glitchDraw();
