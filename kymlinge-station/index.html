@@ -167,8 +167,9 @@ Look at it to freeze it. Back away to win some distance.</p>
   <div class="controls">
     <button class="ctl" id="walkBtn" type="button">Hold to walk</button>
     <button class="ctl" id="blinkBtn" type="button">Hold to blink</button>
+    <button class="ctl" id="sprintBtn" type="button">Sprint (once)</button>
   </div>
-  <p class="hint">Move: W A S D or arrow keys. Look: drag the view. Blink: hold Space. On a touch screen, hold Walk, hold Blink, and drag the view to look.</p>
+  <p class="hint">Move: W A S D or arrow keys. Look: drag the view. Blink: hold Space. Sprint: Shift, once per run, 3 seconds. On a touch screen, hold Walk, hold Blink, and drag the view to look.</p>
 </main>
 
 <script>
@@ -186,7 +187,7 @@ Look at it to freeze it. Back away to win some distance.</p>
     level: $("levelLabel"), best: $("bestLabel"),
     status: $("status"), statusText: $("statusText"),
     fill: $("strainFill"), gapFill: $("gapFill"), sMeter: $("strainMeter"), gMeter: $("gapMeter"),
-    walkBtn: $("walkBtn"), blinkBtn: $("blinkBtn"), soundBtn: $("soundBtn"),
+    sprintBtn: $("sprintBtn"), walkBtn: $("walkBtn"), blinkBtn: $("blinkBtn"), soundBtn: $("soundBtn"),
     dir: $("dir"), dirArrow: $("dirArrow"),
     choices: $("choices"), leaveBtn: $("leaveBtn"), huntBtn: $("huntBtn")
   };
@@ -1193,6 +1194,11 @@ Look at it to freeze it. Back away to win some distance.</p>
   /* ---------- Game state ---------- */
   var state = "ready";          // ready | play | dead | won
   var px = 0, pz = 0, yaw = -Math.PI / 2, pitch = 0;
+  var sprintLeft = 1, sprintT = 0;
+  function trySprint() {
+    if (state !== "play" || sprintLeft < 1 || sprintT > 0) return;
+    sprintLeft = 0; sprintT = 3; el.sprintBtn.disabled = true; el.sprintBtn.textContent = "Sprint used"; el.sprintBtn.classList.add("down");
+  }
   var held = false, walkBtn = false, ignoreUntilRelease = false, keys = {};
   var forced = 0, lid = 0, strain = 0, seen = false;
   var stateT = 0, walkT = 0, stepT = 0, hbT = 1, lightT = 0, t = 0, cleared = 0;
@@ -1231,6 +1237,8 @@ Look at it to freeze it. Back away to win some distance.</p>
   }
   function startGame() {
     leaveCity();
+    if (state === "dead" || state === "end" || state === "intro" || state === "ready") { sprintLeft = 1; el.sprintBtn.disabled = false; el.sprintBtn.textContent = "Sprint (once)"; }
+    sprintT = 0; el.sprintBtn.classList.remove("down");
     if (state === "dead" || state === "end") { level = 1; gmode = "escape"; }
     else if (state === "won") { level++; }
     initAudio();
@@ -1440,14 +1448,15 @@ Look at it to freeze it. Back away to win some distance.</p>
       var fw = (keys.KeyW || keys.ArrowUp ? 1 : 0) - (keys.KeyS || keys.ArrowDown ? 1 : 0) + (walkBtn ? 1 : 0);
       var sd = (keys.KeyD ? 1 : 0) - (keys.KeyA ? 1 : 0);
       yaw += ((keys.ArrowLeft ? 1 : 0) - (keys.ArrowRight ? 1 : 0)) * 1.9 * dt;
+      if (sprintT > 0) { sprintT -= dt; fw = 1; if (sprintT <= 0) el.sprintBtn.classList.remove("down"); }
       fw = Math.max(-1, Math.min(1, fw));
       var len = Math.hypot(fw, sd);
       if (len > 0) {
-        var fx = -Math.sin(yaw), fz = -Math.cos(yaw), rx = Math.cos(yaw), rz = -Math.sin(yaw), k = WALK * (fw < 0 ? 0.6 : 1) / Math.max(1, len);
+        var fx = -Math.sin(yaw), fz = -Math.cos(yaw), rx = Math.cos(yaw), rz = -Math.sin(yaw), k = WALK * (fw < 0 ? 0.6 : 1) * (sprintT > 0 ? 2.1 : 1) / Math.max(1, len);
         tryMove((fx * fw + rx * sd) * k * dt, (fz * fw + rz * sd) * k * dt);
         walking = true; walkT += dt;
         stepT -= dt;
-        if (stepT <= 0) { footstep(1, 0); stepT = 0.52; }
+        if (stepT <= 0) { footstep(sprintT > 0 ? 1.4 : 1, 0); stepT = sprintT > 0 ? 0.26 : 0.52; }
       }
     }
 
@@ -1791,6 +1800,7 @@ Look at it to freeze it. Back away to win some distance.</p>
     var c = e.code;
     if (c === "Space" || c === "ArrowUp" || c === "ArrowDown" || c === "ArrowLeft" || c === "ArrowRight") e.preventDefault();
     if (c === "Space") { if (!e.repeat) pressBlink(true); return; }
+    if (c === "ShiftLeft" || c === "ShiftRight") { if (!e.repeat) trySprint(); return; }
     keys[c] = true;
   });
   window.addEventListener("keyup", function (e) {
@@ -1806,6 +1816,7 @@ Look at it to freeze it. Back away to win some distance.</p>
     ["pointerup", "pointercancel", "lostpointercapture"].forEach(function (ev) { node.addEventListener(ev, off); });
   }
   hold(el.blinkBtn, function () { pressBlink(true); }, function () { pressBlink(false); });
+  el.sprintBtn.addEventListener("click", function () { trySprint(); el.sprintBtn.blur(); });
   hold(el.walkBtn, function () { if (state === "play") { walkBtn = true; el.walkBtn.classList.add("down"); } },
     function () { walkBtn = false; el.walkBtn.classList.remove("down"); });
 
