@@ -1,31 +1,21 @@
 # Kymlinge Station
 
-A short first-person horror game set on the last Stockholm subway home. You wake in a dark, closed, empty station lit only by green exit signs, with something long dead walking it. Inspired by Silverpilen and the unopened Kymlinge station, and by the Norse draugr.
+A short first-person horror game set in the closed, empty Kymlinge station on the Stockholm subway. You wake on a bench by the track with something long dead walking the station. Find the nödutgång (emergency exit), collect what you can, and get out before it reaches you. Inspired by Silverpilen and the unopened Kymlinge station.
 
 ## Play
 
-Open `index.html` in a browser. No build step. Three.js loads from a CDN.
+Open `index.html` in a browser. No build step. Three.js loads from a CDN; the entity model and sounds are the `.glb` and `.mp3` files next to it.
 
-The entity is a hooded black figure, 1.85 m tall, with two white eyes and a torn hem, drawn after the team's ink illustration. It is built from simple shapes in code, so there are no model files.
-
-Add `?demo` to the URL to watch an autopilot play all three levels and the armed hunt.
+Add `?demo` to the URL to watch an autopilot play a run.
 
 ## Rules
 
 - Hold **Space** to close your eyes. You stop, and it moves.
-- It moves whenever you are not looking at it, including while you read signs, and freezes when seen.
-- Signs only show their arrow when you look straight at them.
+- It only freezes while you look at it, and it moves whenever you look away, including while you read signs.
+- Signs only show their arrow when you look straight at them. The green nödutgång signs follow the official route; shortcuts (some marked GENVÄG) are not on it.
 - Eye strain builds while your eyes are open and forces a blink at 100.
-- Clear three levels, then leave or go back inside, armed with an iron axe, and hunt the dead.
-
-Controls: WASD or arrows to walk, drag to look, Space to blink. On touch, use the on-screen buttons.
-
-Status: not yet play-tested. Speed, fog and lighting values are untuned.
-
-## Running locally
-
-The final character is loaded from `wraith.glb`, `wraith_walk.glb` and `wraith_run.glb`, so serve the folder over HTTP (for example `python3 -m http.server`) instead of opening `index.html` from disk. If the models fail to load, the built-in hooded figure is used instead.
-
-## Music
-
-`kymlinge-jumpscare.mp3` plays when the entity catches you. `kymlinge-music.mp3` loops as background music. It starts on the first key press or tap, and the Sound button mutes it with everything else.
+- Loot: kanelbullar (+2), rare kardemummabullar (+5) and one golden Dalahäst deep in the maze (+50, +1 sprint, +25 more if you escape with it).
+- Sprint once per run. Shift or the Sprint button.
+- Escape at sunrise, then walk away into Stockholm or go back in with an iron axe to destroy it for +100.
+- Modes: Easy (smaller maze, fewer false alarms, 4 hits on the ghost) and Medium. High scores and ranks are saved per mode in the browser.
+- Full screen with the button or **F**.
