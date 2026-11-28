@@ -2369,6 +2369,8 @@ Look at it to freeze it. Back away to win some distance.</p>
     wake.t = (level === 1 && gmode === "escape") ? 0 : 99; wake.grace = 0; wake.hot = false;
     vis = { phase: "calm", t: 0, next: wake.t === 0 ? 20 : 12 + Math.random() * 10, dur: 0, fake: false, first: true, cueT: 10 + Math.random() * 8, hb: 0, warnLen: 0, q: [] }; lvlTime = 0; vanish(); updateHud();
     if (wake.t === 0 && startBench) { px = startBench.x; pz = startBench.z; yaw = Math.PI / 2; pitch = -0.32; camY = -0.5; } else { camY = 0; }
+    if (metro.active) { metro.active = false; metroAudioStop(); camera.far = 60; camera.updateProjectionMatrix(); }
+    if (wake.t === 0 && startBench && metro.ready) startMetro();      // the night train ride replaces the bench when its models have loaded
     glEl.style.filter = "";
     state = "play"; held = false; ignoreUntilRelease = true;
     el.overlay.hidden = true;
@@ -2384,7 +2386,7 @@ Look at it to freeze it. Back away to win some distance.</p>
       if (v && stateT > 0.4) { state = "play"; held = false; ignoreUntilRelease = true; el.overlay.hidden = true; }
       return;
     }
-    if (wake.t < 8) { if (v && wake.t > 2 && wake.t < 6) wake.t = 6; return; }
+    if (wake.t < 8) { if (metro.active) { if (v && metro.t > 1.5) skipMetro(); return; } if (v && wake.t > 2 && wake.t < 6) wake.t = 6; return; }
     if (ignoreUntilRelease) { if (!v) ignoreUntilRelease = false; return; }
     held = v;
     el.blinkBtn.classList.toggle("down", v);
@@ -2554,7 +2556,361 @@ Look at it to freeze it. Back away to win some distance.</p>
     if (!startBench || !startBench.group.visible) return;
     startBench.group.visible = false; var bi2 = blockers.indexOf(startBench.block); if (bi2 >= 0) blockers.splice(bi2, 1);
   }
+  /* ---------- Night metro intro: you wake up holding a pole on the last train, Stockholm outside ---------- */
+  // Timeline (seconds). Space skips. Car is static at the origin, the world slides past along -x.
+  var MT = { lids: 6, announce: 8.5, tunnel: 12, flicker: 15.2, vanish: 15.7, brake: 16.5, stop: 21, doors: 21.6, release: 22.6, turn: 23, walk: 24.2, close: 26.3, end: 26.9 };
+  var metro = { ready: false, active: false, t: 0, scene: null, parts: {} }, MV = 14;   // cruising speed, m/s
+  var MW = 2.7, MLEN = 16, MH = 2.2, MEYE = 1.66;
+  var mPlayer = new THREE.Vector3(-0.3, 0, 0.38);    // feet; the vestibule pole stands at the origin
+  var mAssets = { pass: {}, arm: null, sky: null }, mLoadLeft = 7;
+  (function loadMetroAssets() {
+    var L = new THREE.GLTFLoader(), done = function () { if (--mLoadLeft === 0) metro.ready = true; };
+    ["p_old_man", "p_hoodie", "p_leather", "p_headphones", "p_phone"].forEach(function (n) {
+      L.load("models/metro/" + n + ".glb", function (g) { mAssets.pass[n] = g; done(); }, undefined, function () { mLoadLeft = 1e9; });
+    });
+    L.load("models/metro/arm.glb", function (g) { mAssets.arm = g; done(); }, undefined, function () { mLoadLeft = 1e9; });
+    new THREE.TextureLoader().load("models/metro/stockholm_night.jpg", function (t) { t.encoding = THREE.sRGBEncoding; mAssets.sky = t; done(); }, undefined, function () { mLoadLeft = 1e9; });
+  })();
+
+  function sMetro(t) {        // distance travelled by time t (constant speed, then a linear brake to the stop)
+    if (t <= MT.brake) return MV * t;
+    var bt = Math.min(t, MT.stop) - MT.brake, D = MT.stop - MT.brake;
+    return MV * MT.brake + MV * (bt - bt * bt / (2 * D));
+  }
+  function vMetro(t) { return t <= MT.brake ? MV : t >= MT.stop ? 0 : MV * (1 - (t - MT.brake) / (MT.stop - MT.brake)); }
+
+  // grip a vertical pole: CCD IK for the elbow, hand set by basis, fingers curled round it
+  function mCCD(root, chain, eff, target, iters) {
+    var e = new THREE.Vector3(), j = new THREE.Vector3(), a = new THREE.Vector3(), b = new THREE.Vector3(), qq = new THREE.Quaternion(), pq = new THREE.Quaternion();
+    for (var it = 0; it < iters; it++) for (var i = 0; i < chain.length; i++) {
+      var bone = chain[i]; root.updateMatrixWorld(true);
+      eff.getWorldPosition(e); bone.getWorldPosition(j);
+      a.subVectors(e, j).normalize(); b.subVectors(target, j).normalize();
+      if (a.dot(b) > 0.99999) continue;
+      qq.setFromUnitVectors(a, b); bone.parent.getWorldQuaternion(pq);
+      bone.quaternion.premultiply(pq.clone().invert().multiply(qq).multiply(pq));
+    }
+  }
+  function gripPole(B, root, P0) {
+    root.updateMatrixWorld(true);
+    var sh = new THREE.Vector3(); B.Bip01_R_UpperArm.getWorldPosition(sh);
+    var up = new THREE.Vector3(0, 1, 0), F = new THREE.Vector3(P0.x - sh.x, 0, P0.z - sh.z).normalize();
+    var N = new THREE.Vector3().crossVectors(up, F).normalize();
+    var wrist = P0.clone().addScaledVector(F, -0.075).addScaledVector(N, -0.035);
+    mCCD(root, [B.Bip01_R_Forearm, B.Bip01_R_UpperArm], B.Bip01_R_Hand, wrist, 16);
+    var Z = new THREE.Vector3().crossVectors(F, N), m = new THREE.Matrix4().makeBasis(F, N, Z), qw = new THREE.Quaternion().setFromRotationMatrix(m);
+    var pq = new THREE.Quaternion(); B.Bip01_R_Hand.parent.getWorldQuaternion(pq);
+    B.Bip01_R_Hand.quaternion.copy(pq.invert().multiply(qw));
+    [1, 2, 3, 4].forEach(function (f) { [["", 0.75], ["1", 1.05], ["2", 0.85]].forEach(function (sg) { var bn = B["Bip01_R_Finger" + f + sg[0]]; if (bn) bn.rotation.z += 1.25 * sg[1]; }); });
+    if (B.Bip01_R_Finger01) B.Bip01_R_Finger01.rotation.z += 0.5;
+    root.updateMatrixWorld(true);
+  }
+
+  function mTex(w, h, fn, rx, ry) { var t = canvasTex(w, h, fn); t.repeat.set(rx || 1, ry || 1); return t; }
+  function buildMetro() {
+    var S = new THREE.Scene(), P = metro.parts; metro.scene = S;
+    S.background = new THREE.Color(0x01030a);
+    S.fog = new THREE.FogExp2(0x030814, 0.006);
+    var car = new THREE.Group(); S.add(car); P.car = car;
+    P.amb = new THREE.AmbientLight(0x4f6a82, 0.16); S.add(P.amb);
+    P.lamps = [-5.5, 0, 5.5].map(function (x) { var l = new THREE.PointLight(0xc4e2ff, 0.62, 8, 1.7); l.position.set(x, MH - 0.15, 0); car.add(l); return l; });
+
+    // --- materials ---
+    var floorT = mTex(256, 256, function (c, w, h) {
+      c.fillStyle = "#3b3e40"; c.fillRect(0, 0, w, h);
+      for (var i = 0; i < 2600; i++) { var v = 40 + Math.random() * 60 | 0; c.fillStyle = "rgba(" + v + "," + v + "," + (v + 4) + ",0.5)"; c.fillRect(Math.random() * w, Math.random() * h, 1.5, 1.5); }
+      for (var k = 0; k < 6; k++) { var g = c.createRadialGradient(Math.random() * w, Math.random() * h, 2, Math.random() * w, Math.random() * h, 40); g.addColorStop(0, "rgba(20,18,15,0.35)"); g.addColorStop(1, "rgba(20,18,15,0)"); c.fillStyle = g; c.fillRect(0, 0, w, h); }
+    }, 8, 2);
+    var seatT = mTex(128, 128, function (c, w, h) {      // SL-style blue moquette
+      c.fillStyle = "#1d3a78"; c.fillRect(0, 0, w, h);
+      for (var y = 0; y < h; y += 16) for (var x = 0; x < w; x += 16) { c.fillStyle = (x + y) % 32 ? "#2a54a8" : "#13285a"; c.fillRect(x + 3, y + 3, 6, 6); c.fillStyle = "#c8323a"; c.fillRect(x + 11, y + 11, 2, 2); }
+      for (var i = 0; i < 900; i++) { c.fillStyle = "rgba(0,0,0,0.25)"; c.fillRect(Math.random() * w, Math.random() * h, 1, 1); }
+    }, 3, 1);
+    // side wall with window and door holes (alpha)
+    function wallTex() {
+      return canvasTex(2048, 256, function (c, w, h) {
+        c.clearRect(0, 0, w, h);
+        c.fillStyle = "#9da3a2"; c.fillRect(0, 0, w, h);
+        for (var gi = 0; gi < 900; gi++) { c.fillStyle = "rgba(40,36,30," + (Math.random() * 0.12).toFixed(2) + ")"; c.fillRect(Math.random() * w, Math.random() * h, 3 + Math.random() * 10, 2 + Math.random() * 6); }
+        var g = c.createLinearGradient(0, 0, 0, h); g.addColorStop(0, "rgba(255,255,255,0.15)"); g.addColorStop(0.55, "rgba(0,0,0,0)"); g.addColorStop(1, "rgba(0,0,0,0.25)"); c.fillStyle = g; c.fillRect(0, 0, w, h);
+        c.fillStyle = "#4a4e52"; c.fillRect(0, h * 0.62, w, h * 0.38);                 // dark lower panels
+        var px = function (x) { return (x + MLEN / 2) / MLEN * w; }, py = function (y) { return h - y / MH * h; };
+        c.globalCompositeOperation = "destination-out";
+        [[-6.6, -4.4], [-3.9, -1.5], [1.5, 3.9], [4.4, 6.6]].forEach(function (s) {    // windows over the benches
+          var x0 = px(s[0]), x1 = px(s[1]), y0 = py(1.95), y1 = py(0.95), r = 14;
+          c.beginPath(); c.moveTo(x0 + r, y0); c.arcTo(x1, y0, x1, y1, r); c.arcTo(x1, y1, x0, y1, r); c.arcTo(x0, y1, x0, y0, r); c.arcTo(x0, y0, x1, y0, r); c.fill();
+        });
+        c.fillRect(px(-0.68), py(2.0), px(0.68) - px(-0.68), py(0) - py(2.0));          // door opening
+        c.globalCompositeOperation = "source-over";
+        c.strokeStyle = "rgba(30,30,30,0.6)"; c.lineWidth = 3;
+        for (var x = 0; x < w; x += 128) { c.beginPath(); c.moveTo(x, py(0.62)); c.lineTo(x, h); c.stroke(); }
+      });
+    }
+    var wallMatM = new THREE.MeshStandardMaterial({ map: wallTex(), transparent: true, alphaTest: 0.5, roughness: 0.55, metalness: 0.15, side: THREE.DoubleSide });
+    var glassMat = new THREE.MeshStandardMaterial({ color: 0x0a1018, transparent: true, opacity: 0.14, roughness: 0.05, metalness: 0.6, depthWrite: false });
+    var steel = new THREE.MeshStandardMaterial({ color: 0xd2d6da, metalness: 0.9, roughness: 0.22 });
+    var plastic = new THREE.MeshStandardMaterial({ color: 0xbfc3bf, roughness: 0.6 });
+
+    function box(w, h, d, mat, x, y, z, parent) { var m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat); m.position.set(x, y, z); (parent || car).add(m); return m; }
+    // floor, ceiling
+    var fl = new THREE.Mesh(new THREE.PlaneGeometry(MLEN, MW), new THREE.MeshStandardMaterial({ map: floorT, roughness: 0.7 })); fl.rotation.x = -Math.PI / 2; car.add(fl);
+    var ce = new THREE.Mesh(new THREE.PlaneGeometry(MLEN, MW), plastic); ce.rotation.x = Math.PI / 2; ce.position.y = MH; car.add(ce);
+    // light strips
+    var stripMat = new THREE.MeshStandardMaterial({ color: 0x9fb4c8, emissive: 0xbfdcff, emissiveIntensity: 0.7 }); P.stripMat = stripMat;
+    [-0.62, 0.62].forEach(function (z) { box(MLEN - 0.6, 0.03, 0.09, stripMat, 0, MH - 0.02, z); });
+    // walls
+    [-1, 1].forEach(function (sd) {
+      var wl = new THREE.Mesh(new THREE.PlaneGeometry(MLEN, MH), wallMatM); wl.position.set(0, MH / 2, sd * MW / 2); if (sd > 0) wl.rotation.y = Math.PI; car.add(wl);
+      var gl2 = new THREE.Mesh(new THREE.PlaneGeometry(MLEN, MH), glassMat); gl2.position.set(0, MH / 2, sd * (MW / 2 + 0.03)); car.add(gl2);
+    });
+    // end walls
+    [-1, 1].forEach(function (sd) { var e = new THREE.Mesh(new THREE.PlaneGeometry(MW, MH), wallMatM.clone()); e.material.map = null; e.material.color.setHex(0xb8bcb8); e.material.transparent = false; e.position.set(sd * MLEN / 2, MH / 2, 0); e.rotation.y = -sd * Math.PI / 2; car.add(e); });
+    // benches along the walls
+    var seatMat = new THREE.MeshStandardMaterial({ map: seatT, roughness: 0.95 });
+    [[-6.6, -1.4], [1.4, 6.6]].forEach(function (s) {
+      [-1, 1].forEach(function (sd) {
+        var len = s[1] - s[0], cx = (s[0] + s[1]) / 2, z = sd * (MW / 2 - 0.26);
+        box(len, 0.1, 0.48, seatMat, cx, 0.43, z);
+        var back = box(len, 0.5, 0.08, seatMat, cx, 0.72, sd * (MW / 2 - 0.05)); back.rotation.x = sd * 0.12;
+        box(len, 0.38, 0.4, new THREE.MeshStandardMaterial({ color: 0x2c3034, roughness: 0.8 }), cx, 0.19, sd * (MW / 2 - 0.28));
+      });
+    });
+    // poles: vestibule pole (the one you hold), bench-end poles, overhead rails
+    var poleG = new THREE.CylinderGeometry(0.018, 0.018, MH, 14);
+    [[0, 0], [-1.4, -0.95], [-1.4, 0.95], [1.4, -0.95], [1.4, 0.95]].forEach(function (p) { var m = new THREE.Mesh(poleG, steel); m.position.set(p[0], MH / 2, p[1]); car.add(m); });
+    [-0.95, 0.95].forEach(function (z) { var r = new THREE.Mesh(new THREE.CylinderGeometry(0.016, 0.016, MLEN - 0.4, 10), steel); r.rotation.z = Math.PI / 2; r.position.set(0, 1.9, z); car.add(r); });
+    // doors (+z side opens at the platform; -z side stays shut)
+    P.doors = [];
+    var doorT = canvasTex(128, 256, function (c, w, h) { c.fillStyle = "#b8bcb8"; c.fillRect(0, 0, w, h); c.clearRect(18, 22, w - 36, h * 0.45); c.fillStyle = "#e3b51e"; c.fillRect(0, h - 10, w, 10); c.strokeStyle = "#222"; c.lineWidth = 6; c.strokeRect(0, 0, w, h); });
+    var doorMat = new THREE.MeshStandardMaterial({ map: doorT, transparent: true, alphaTest: 0.5, roughness: 0.5, metalness: 0.2, side: THREE.DoubleSide });
+    [-1, 1].forEach(function (sd) {
+      [-1, 1].forEach(function (lr) {
+        var d = new THREE.Mesh(new THREE.PlaneGeometry(0.68, 2.0), doorMat); d.position.set(lr * 0.34, 1.0, sd * (MW / 2 - 0.01)); car.add(d);
+        if (sd > 0) P.doors.push({ m: d, x0: lr * 0.34, dir: lr });
+      });
+    });
+    // LED line display above the doors, scrolling orange text
+    P.ledC = document.createElement("canvas"); P.ledC.width = 512; P.ledC.height = 64;
+    P.ledT = new THREE.CanvasTexture(P.ledC); P.ledT.encoding = THREE.sRGBEncoding;
+    [-1, 1].forEach(function (sd) { var l = new THREE.Mesh(new THREE.PlaneGeometry(1.1, 0.14), new THREE.MeshBasicMaterial({ map: P.ledT })); l.position.set(0, 2.08, sd * (MW / 2 - 0.02)); if (sd > 0) l.rotation.y = Math.PI; car.add(l); });
+    // ad frames above the windows
+    var ads = ["Tunnelbana · Blå linjen", "SL · Res smart i natt", "Kom ihåg: sista tåget 01:12", "Sov inte på tåget"];
+    [-1, 1].forEach(function (sd, si) {
+      [-5.5, -2.7, 2.7, 5.5].forEach(function (x, i) {
+        var t = canvasTex(256, 64, function (c, w, h) { c.fillStyle = ["#f4f1e8", "#0e3b8a", "#1b1b1b", "#c8102e"][(i + si) % 4]; c.fillRect(0, 0, w, h); c.fillStyle = (i + si) % 4 === 0 ? "#111" : "#fff"; c.font = "bold 22px Arial"; c.fillText(ads[(i + si * 2) % 4], 12, 40); });
+        var a = new THREE.Mesh(new THREE.PlaneGeometry(1.4, 0.32), new THREE.MeshStandardMaterial({ map: t, roughness: 0.6 })); a.position.set(x, 2.02, sd * (MW / 2 - 0.02)); if (sd > 0) a.rotation.y = Math.PI; car.add(a);
+      });
+    });
+
+    // --- passengers ---
+    P.pass = []; P.mixers = [];
+    function addP(name, x, z, ry, t0) {
+      var g = mAssets.pass[name]; if (!g) return null;
+      var root = g.scene; root.position.set(x, 0, z); root.rotation.y = ry; car.add(root);
+      root.traverse(function (o) { if (o.isMesh) { o.frustumCulled = false; } });
+      var mx = new THREE.AnimationMixer(root); var act = mx.clipAction(g.animations[0]); act.play(); mx.update(t0 || 0);
+      P.mixers.push(mx); P.pass.push(root); return root;
+    }
+    var seatZ = MW / 2 - 0.3;
+    addP("p_old_man", -2.3, -seatZ, 0, 1);
+    addP("p_leather", 2.7, -seatZ, 0, 4);
+    addP("p_hoodie", 2.9, seatZ, Math.PI, 2);
+    addP("p_headphones", -1.5, -0.2, Math.PI / 2, 3);
+    var ph = addP("p_phone", 1.15, 0.25, -Math.PI / 2, 5);
+    if (ph) {   // her phone, screen lit
+      var hand = null; ph.traverse(function (o) { if (o.name === "Bip01_R_Hand") hand = o; });
+      if (hand) {
+        var phone = new THREE.Mesh(new THREE.BoxGeometry(0.008, 0.15, 0.075).scale(100, 100, 100), [0, 0, 0, 0, 0, 0].map(function (_, i) { return i === 0 ? new THREE.MeshBasicMaterial({ color: 0x6f95d8 }) : new THREE.MeshStandardMaterial({ color: 0x0c0c0e, roughness: 0.35, metalness: 0.4 }); }));
+        phone.position.set(9, 2, 4); hand.add(phone);
+      }
+    }
+    // --- your right arm, holding the pole ---
+    if (mAssets.arm) {
+      var arm = mAssets.arm.scene, B = {};
+      arm.traverse(function (o) { if (o.isBone) B[o.name] = o; if (o.isMesh) o.frustumCulled = false; });
+      gripPole(B, arm, new THREE.Vector3(-0.3, 1.5, 0.38));   // in the arm's own space: 0.3 m right, 0.38 m ahead of the feet
+      arm.position.copy(mPlayer); arm.rotation.y = Math.PI; car.add(arm); P.arm = arm;
+    }
+
+    // --- outside: Stockholm across Riddarfjärden, bridge railing, masts, water ---
+    var out = new THREE.Group(); S.add(out); P.bridge = out;
+    // photo widened with its own sky; the city part is ~90 m wide at 75 m, skyline just below eye level
+    var sky = new THREE.Mesh(new THREE.PlaneGeometry(252, 46.5), new THREE.MeshBasicMaterial({ map: mAssets.sky, fog: false }));
+    sky.position.set(0, 1.85, -75); out.add(sky); P.sky = sky;
+    var farT = canvasTex(1024, 256, function (c, w, h) {        // the other side: dark hills with lit windows
+      c.fillStyle = "#02040a"; c.fillRect(0, 0, w, h);
+      c.fillStyle = "#05070c"; c.beginPath(); c.moveTo(0, h * 0.55);
+      for (var x = 0; x <= w; x += 32) c.lineTo(x, h * (0.45 + Math.sin(x * 0.01) * 0.06 + Math.random() * 0.05)); c.lineTo(w, h); c.lineTo(0, h); c.fill();
+      for (var i = 0; i < 380; i++) { c.fillStyle = Math.random() < 0.8 ? "rgba(255,196,120," + (0.4 + Math.random() * 0.6).toFixed(2) + ")" : "rgba(200,220,255,0.8)"; c.fillRect(Math.random() * w, h * (0.55 + Math.random() * 0.4), 2, 2); }
+    });
+    var far = new THREE.Mesh(new THREE.PlaneGeometry(160, 40), new THREE.MeshBasicMaterial({ map: farT, fog: false })); far.position.set(0, 2, 75); far.rotation.y = Math.PI; out.add(far); P.far = far;
+    P.posts = []; var postMat = new THREE.MeshStandardMaterial({ color: 0x1a1d22, roughness: 0.7 });
+    for (var i = 0; i < 24; i++) [-1, 1].forEach(function (sd) { var p = box(0.1, 1.1, 0.1, postMat, 0, 0.35, sd * 2.1, out); p.userData.x0 = i * 2.5 - 30; P.posts.push(p); });
+    [-1, 1].forEach(function (sd) { var rl = box(200, 0.06, 0.06, postMat, 0, 0.9, sd * 2.1, out); });
+    P.masts = []; for (var j = 0; j < 4; j++) [-1, 1].forEach(function (sd) { var m = box(0.18, 5.2, 0.18, postMat, 0, 1.6, sd * 2.6, out); m.userData.x0 = j * 25 - 50; P.masts.push(m); });
+    for (var j2 = 0; j2 < 4; j2++) { var arm2 = box(0.08, 0.08, 5.2, postMat, 0, 3.9, 0, out); arm2.userData.x0 = j2 * 25 - 50; P.masts.push(arm2); }
+    // tunnel
+    var tunT = mTex(512, 256, function (c, w, h) {
+      c.fillStyle = "#15171a"; c.fillRect(0, 0, w, h);
+      for (var i = 0; i < 1800; i++) { var v = 10 + Math.random() * 30 | 0; c.fillStyle = "rgba(" + v + "," + v + "," + v + ",0.6)"; c.fillRect(Math.random() * w, Math.random() * h, 3, 3); }
+      c.strokeStyle = "#090a0b"; c.lineWidth = 6; [0.3, 0.36, 0.42].forEach(function (y) { c.beginPath(); c.moveTo(0, h * y); c.lineTo(w, h * y + 6); c.stroke(); });
+      c.fillStyle = "#0b0c0d"; for (var x = 0; x < w; x += 128) c.fillRect(x, 0, 10, h);
+    }, 30, 1);
+    var tun = new THREE.Group(); S.add(tun); tun.visible = false; P.tunnel = tun; P.tunT = tunT;
+    [-1, 1].forEach(function (sd) { var tw = new THREE.Mesh(new THREE.PlaneGeometry(400, 5), new THREE.MeshStandardMaterial({ map: tunT, roughness: 0.9 })); tw.position.set(0, 1.5, sd * 2.2); tw.rotation.y = sd > 0 ? Math.PI : 0; tun.add(tw); if (sd > 0) P.tunPlus = tw; });
+    var tc = new THREE.Mesh(new THREE.PlaneGeometry(400, 5), new THREE.MeshStandardMaterial({ map: tunT, roughness: 0.9 })); tc.rotation.x = Math.PI / 2; tc.position.y = 3.6; tun.add(tc);
+    P.tlamps = []; var tlMat = new THREE.MeshBasicMaterial({ color: 0xffd9a0 });
+    for (var k = 0; k < 6; k++) { var tl = box(0.5, 0.08, 0.05, tlMat, 0, 2.6, -2.15, tun); tl.userData.x0 = k * 20 - 60; P.tlamps.push(tl); }
+    // Kymlinge platform, waiting on the +z side
+    var plat = new THREE.Group(); plat.visible = false; S.add(plat); P.plat = plat;
+    var tileT = mTex(256, 256, function (c, w, h) { c.fillStyle = "#c9b23c"; c.fillRect(0, 0, w, h); c.strokeStyle = "#7d6d22"; c.lineWidth = 3; for (var i = 0; i <= w; i += 32) { c.beginPath(); c.moveTo(i, 0); c.lineTo(i, h); c.stroke(); c.beginPath(); c.moveTo(0, i); c.lineTo(w, i); c.stroke(); } for (var k = 0; k < 40; k++) { c.fillStyle = "rgba(40,30,10,0.25)"; c.fillRect(Math.random() * w, Math.random() * h, 20, 3); } }, 20, 2);
+    var pf = new THREE.Mesh(new THREE.PlaneGeometry(60, 5), new THREE.MeshStandardMaterial({ color: 0x45484a, roughness: 0.6 })); pf.rotation.x = -Math.PI / 2; pf.position.set(0, 0.0, 4.0); plat.add(pf);
+    var edge = box(60, 0.02, 0.25, new THREE.MeshStandardMaterial({ color: 0xe3c21e }), 0, 0.01, 1.75, plat);
+    var bw = new THREE.Mesh(new THREE.PlaneGeometry(60, 4), new THREE.MeshStandardMaterial({ map: tileT, roughness: 0.5 })); bw.position.set(0, 2, 6.5); bw.rotation.y = Math.PI; plat.add(bw);
+    var signT = canvasTex(512, 128, function (c, w, h) { c.fillStyle = "#14327a"; c.fillRect(0, 0, w, h); c.strokeStyle = "#f2f2f2"; c.lineWidth = 6; c.strokeRect(8, 8, w - 16, h - 16); c.fillStyle = "#f2f2f2"; c.font = "bold 64px Arial"; c.textAlign = "center"; c.fillText("KYMLINGE", w / 2, 88); });
+    [-12, 0, 12].forEach(function (x) { var sg = new THREE.Mesh(new THREE.PlaneGeometry(2.4, 0.6), new THREE.MeshStandardMaterial({ map: signT, roughness: 0.5, emissive: 0x223355, emissiveIntensity: 0.3 })); sg.position.set(x, 2.3, 6.45); sg.rotation.y = Math.PI; plat.add(sg); });
+    P.platLights = [-14, 0, 14].map(function (x) { var l = new THREE.PointLight(0xbfe0ff, 0.9, 14, 1.6); l.position.set(x, 3.2, 4); plat.add(l); return l; });
+  }
+
+  // --- sound: wheels on rails, motor, brakes, door chime and hiss ---
+  var mSnd = null;
+  function metroAudioStart() {
+    if (!AC || !noiseBuf || mSnd) return;
+    try {
+      var src = AC.createBufferSource(); src.buffer = noiseBuf; src.loop = true;
+      var lp = AC.createBiquadFilter(); lp.type = "lowpass"; lp.frequency.value = 420;
+      var g = AC.createGain(); g.gain.value = 0; src.connect(lp); lp.connect(g); g.connect(master); src.start();
+      var hum = AC.createOscillator(); hum.type = "sawtooth"; hum.frequency.value = 90;
+      var hl = AC.createBiquadFilter(); hl.type = "lowpass"; hl.frequency.value = 260; var hg = AC.createGain(); hg.gain.value = 0;
+      hum.connect(hl); hl.connect(hg); hg.connect(master); hum.start();
+      mSnd = { src: src, lp: lp, g: g, hum: hum, hg: hg, clack: 0 };
+    } catch (e) {}
+  }
+  function metroAudioStop() { if (!mSnd) return; try { var t0 = AC.currentTime; mSnd.g.gain.setTargetAtTime(0, t0, 0.3); mSnd.hg.gain.setTargetAtTime(0, t0, 0.3); var s = mSnd; setTimeout(function () { try { s.src.stop(); s.hum.stop(); } catch (e) {} }, 1500); } catch (e) {} mSnd = null; }
+  function mThump(k) {     // wheel set crossing a rail joint
+    if (!AC || !noiseBuf) return;
+    try { var s = AC.createBufferSource(); s.buffer = noiseBuf; var f = AC.createBiquadFilter(); f.type = "lowpass"; f.frequency.value = 180; var g = AC.createGain(), t0 = AC.currentTime;
+      g.gain.setValueAtTime(0.0001, t0); g.gain.linearRampToValueAtTime(0.22 * k, t0 + 0.01); g.gain.exponentialRampToValueAtTime(0.0005, t0 + 0.12);
+      s.connect(f); f.connect(g); g.connect(master); s.start(t0, Math.random()); s.stop(t0 + 0.15); } catch (e) {}
+  }
+  function mHiss(dur, k) {
+    if (!AC || !noiseBuf) return;
+    try { var s = AC.createBufferSource(); s.buffer = noiseBuf; var f = AC.createBiquadFilter(); f.type = "highpass"; f.frequency.value = 2500; var g = AC.createGain(), t0 = AC.currentTime;
+      g.gain.setValueAtTime(0.0001, t0); g.gain.linearRampToValueAtTime(0.12 * k, t0 + 0.05); g.gain.exponentialRampToValueAtTime(0.0005, t0 + dur);
+      s.connect(f); f.connect(g); g.connect(master); s.start(t0, Math.random()); s.stop(t0 + dur + 0.1); } catch (e) {}
+  }
+  function mTones(fs, step, len, vol) {
+    if (!AC) return;
+    try { fs.forEach(function (fq, i) { var o = AC.createOscillator(), g = AC.createGain(), t0 = AC.currentTime + i * step; o.type = "sine"; o.frequency.value = fq;
+      g.gain.setValueAtTime(0, t0); g.gain.linearRampToValueAtTime(vol, t0 + 0.02); g.gain.exponentialRampToValueAtTime(0.0008, t0 + len); o.connect(g); g.connect(master); o.start(t0); o.stop(t0 + len + 0.05); }); } catch (e) {}
+  }
+
+  function startMetro() {
+    if (!metro.scene) buildMetro();
+    var P = metro.parts;
+    metro.active = true; metro.t = 0; metro.evt = {}; metro.clackS = 0;
+    P.pass.forEach(function (p) { p.visible = true; });
+    P.doors.forEach(function (d) { d.m.position.x = d.x0; });
+    if (P.arm) P.arm.visible = true;
+    P.bridge.visible = true; P.tunnel.visible = false; P.plat.visible = false; P.tunPlus.position.x = 0;
+    yaw = -0.22; pitch = -0.1; camera.far = 220; camera.updateProjectionMatrix();
+    metroAudioStart();
+  }
+  function endMetro() {
+    metro.active = false; metroAudioStop();
+    camera.far = 60; camera.updateProjectionMatrix();
+    removeBench();
+    if (startBench) { px = startBench.x - 0.7; pz = startBench.z; }     // just off the train, back to the track
+    yaw = -Math.PI / 2; pitch = 0; camY = 0;
+    wake.t = 8; lid = 0; glEl.style.filter = ""; ignoreUntilRelease = true;
+    setFade(1, "#000"); fadeTarget = 0; fadeSpeed = 1.4;
+  }
+  function skipMetro() { if (metro.t < MT.close - 0.4) { metro.t = MT.close - 0.4; metro.evt.skip = true; } }
+
+  function ledDraw(txt, t) {
+    var c = metro.parts.ledC.getContext("2d"), w = 512, h = 64;
+    c.fillStyle = "#080402"; c.fillRect(0, 0, w, h);
+    c.font = "bold 40px monospace"; c.fillStyle = "#ff8a1c"; c.shadowColor = "#ff6a00"; c.shadowBlur = 8;
+    var tw = c.measureText(txt).width, x = w - ((t * 90) % (tw + w));
+    c.fillText(txt, x, 46); c.shadowBlur = 0;
+    for (var y = 0; y < h; y += 4) { c.fillStyle = "rgba(0,0,0,0.35)"; c.fillRect(0, y, w, 1); }
+    metro.parts.ledT.needsUpdate = true;
+  }
+
+  function stepMetro(dt) {
+    var P = metro.parts, t0 = metro.t; metro.t += dt; var t = metro.t, E = metro.evt;
+    function once(k, at) { if (!E[k] && t >= at) { E[k] = true; return true; } return false; }
+    held = false;
+    // eyes open (the blink you had on the bench), blur clearing
+    lid = t < MT.lids ? lidAt(t) : (t > MT.close ? Math.min(1, (t - MT.close) / 0.5) : 0);
+    glEl.style.filter = t < 6.5 ? "blur(" + (Math.max(0, 1 - t / 5.5) * 8).toFixed(1) + "px)" : "";
+    // head look stays near where the body faces until you turn to the doors
+    if (t < MT.turn) { yaw = Math.max(-1.9, Math.min(1.9, yaw)); }
+    else { var k = Math.min(1, (t - MT.turn) / 1.1), e = k * k * (3 - 2 * k); yaw += ((Math.PI + 0.05) - yaw) * e * 0.25; pitch += (-0.05 - pitch) * 0.1; }
+    for (var i = 0; i < P.mixers.length; i++) P.mixers[i].update(dt);
+    // the world slides by
+    var s = sMetro(t), v = vMetro(t);
+    var wrap = function (x0, span) { var x = ((x0 - s) % span + span) % span; return x - span / 2; };
+    P.posts.forEach(function (p) { p.position.x = wrap(p.userData.x0, 60); });
+    P.masts.forEach(function (m) { m.position.x = wrap(m.userData.x0, 100); });
+    P.sky.position.x = 10 - s * 0.04; P.far.position.x = -10 + s * 0.05;
+    if (once("tunnel", MT.tunnel)) { P.bridge.visible = false; P.tunnel.visible = true; P.tunPlus.position.x = 0; mHiss(1.2, 1.2); }
+    if (P.tunnel.visible) { P.tunT.offset.x = s / 400 * 30 % 1; P.tlamps.forEach(function (l) { l.position.x = wrap(l.userData.x0, 120); }); }
+    if (t >= MT.tunnel - 1) { P.plat.visible = true; P.plat.position.x = sMetro(MT.stop) - s + 0.2; P.tunPlus.position.x = P.plat.position.x - 30 - 200; }   // the wall ends where the platform starts
+    // lights: steady, a dip in the tunnel, a hard flicker; passengers are gone when it ends
+    var base = t < MT.tunnel ? 1 : 0.85, fl = 1;
+    if (t > MT.flicker && t < MT.vanish + 0.9) fl = Math.random() < 0.45 ? 0.05 : 0.8;
+    if (once("vanish", MT.vanish)) { P.pass.forEach(function (p) { p.visible = false; }); mThump(1.4); }
+    P.lamps.forEach(function (l) { l.intensity = 0.62 * base * fl; }); P.stripMat.emissiveIntensity = 0.7 * base * fl; P.amb.intensity = 0.16 * (0.4 + 0.6 * fl);
+    // LED: "Nästa: Kymlinge"
+    ledDraw(t < MT.stop ? "Nästa station: Kymlinge   ·   Next station: Kymlinge   ·   " : "Kymlinge   ·   Dörrarna öppnas   ·   ", t);
+    if (once("ann", MT.announce)) { mTones([784, 659], 0.45, 0.9, 0.08); showToast("Nästa station: Kymlinge"); }
+    // doors
+    if (once("doors", MT.doors)) { mTones([880, 740, 880], 0.18, 0.4, 0.06); mHiss(0.9, 1); }
+    var dk = Math.max(0, Math.min(1, (t - MT.doors - 0.25) / 0.9)), de = dk * dk * (3 - 2 * dk);
+    P.doors.forEach(function (d) { d.m.position.x = d.x0 + d.dir * 0.64 * de; });
+    if (P.arm && once("release", MT.release)) P.arm.visible = false;
+    // sound: rumble scales with speed, rail joints every 18 m (two bogies)
+    if (mSnd) {
+      var vk = v / MV, tun = P.tunnel.visible ? 1.5 : 1;
+      mSnd.g.gain.value = (0.05 + 0.32 * vk) * tun; mSnd.lp.frequency.value = 220 + 520 * vk;
+      mSnd.hg.gain.value = 0.02 + 0.05 * vk; mSnd.hum.frequency.value = 60 + 70 * vk;
+      var js = Math.floor(s / 18), jp = Math.floor(sMetro(t0) / 18);
+      if (js !== jp && v > 0.5) { mThump(0.6 + 0.6 * vk); setTimeout(function () { mThump(0.5 + 0.5 * vk); }, 110 + 900 / Math.max(2, v)); }
+    }
+    if (t > MT.brake && t < MT.stop && once("brake", MT.brake + 0.2)) mHiss(4.2, 0.6);
+    // walk out of the car onto the platform
+    if (t >= MT.walk && t0 < MT.close) {
+      var wk = Math.min(1, (t - MT.walk) / (MT.close - MT.walk));
+      if (Math.floor(wk * 5) !== Math.floor(Math.max(0, (t0 - MT.walk) / (MT.close - MT.walk)) * 5)) footstep(1, 0);
+    }
+    if (t >= MT.end) endMetro();
+    return false;
+  }
+
+  function metroRender() {
+    var P = metro.parts, t = metro.t;
+    var v = vMetro(t), sw = v / MV;
+    // car sway and judder
+    P.car.rotation.x = Math.sin(t * 1.7) * 0.006 * sw + Math.sin(t * 13) * 0.0015 * sw;
+    P.car.position.y = Math.sin(t * 9.3) * 0.004 * sw;
+    var brake = t > MT.brake && t < MT.stop ? 1 : 0;
+    var eye = new THREE.Vector3(mPlayer.x, MEYE, mPlayer.z);
+    if (t >= MT.walk) {     // step through the open doors
+      var wk = Math.min(1, (t - MT.walk) / (MT.close - MT.walk)), e = wk * wk * (3 - 2 * wk);
+      eye.x = mPlayer.x + (0.0 - mPlayer.x) * e; eye.z = mPlayer.z + (2.7 - mPlayer.z) * e;
+      eye.y += Math.sin(wk * Math.PI * 5) * 0.03;
+    }
+    P.car.localToWorld(eye);
+    camera.position.copy(eye);
+    camera.position.x += Math.sin(t * 2.1) * 0.01 * sw - brake * 0.04;
+    camera.rotation.set(pitch + Math.sin(t * 1.3) * 0.004 * sw, yaw, Math.sin(t * 1.1) * 0.01 * sw + P.car.rotation.x);
+    camera.updateMatrixWorld(true);          // the camera lives in the level scene; refresh it by hand
+    renderer.render(metro.scene, camera);
+  }
+
   function stepWake(dt) {
+    if (metro.active) return stepMetro(dt);
     wake.t += dt;
     var t = wake.t;
     lid = lidAt(t); held = false;
@@ -3074,7 +3430,7 @@ Look at it to freeze it. Back away to win some distance.</p>
     else if (state === "dead") { mode = "forced"; label = "It reached you"; }
     else if (state === "won" || state === "choice" || state === "exiting") { mode = "open"; label = "Out"; }
     else if (state === "end") { mode = "open"; label = gmode === "hunt" ? "The station is empty" : "You got out"; }
-    else if (wake.t < 8) { mode = "closed"; label = wake.t < 6 ? "Waking up on a bench · Space skips" : "Standing up"; }
+    else if (wake.t < 8) { mode = "closed"; label = metro.active ? "Night train to Kymlinge · Space skips" : wake.t < 6 ? "Waking up on a bench · Space skips" : "Standing up"; }
     else if (gmode !== "hunt" && vis.phase === "calm") { mode = "open"; label = "Quiet · explore · collect · find the exit"; }
     else if (gmode !== "hunt" && vis.phase === "warn") { mode = "closed"; label = "The lights are wrong · something is near"; }
     else if (gmode === "hunt") {
@@ -3212,6 +3568,7 @@ Look at it to freeze it. Back away to win some distance.</p>
     animAxe(dt); animHunted(dt); scareTick(dt); breathTick(dt); mistTick(t);
   }
   function draw() {
+    if (metro.active) { ui(); metroRender(); el.gl.dataset.sceneReady = "1"; glitchDraw(); return; }
     var moving = !RM && state === "play" && walkT > 0 && stepT > 0 && !held && forced <= 0 && (keys.KeyW || keys.KeyS || keys.ArrowUp || keys.ArrowDown || keys.KeyA || keys.KeyD || walkBtn);
     var cx = 0, cy = 0, cz = 0, rx = 0, ry = 0, rz = 0;
     if (!RM && state === "play") {
