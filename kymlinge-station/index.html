@@ -103,6 +103,8 @@ h1 {
 @media (max-width: 560px) { .view { aspect-ratio: 3 / 4; } }
 #gl { position: absolute; inset: 0; }
 #gl canvas { display: block; width: 100%; height: 100%; }
+#grade { position: absolute; inset: 0; pointer-events: none; mix-blend-mode: soft-light;
+  background: radial-gradient(ellipse at 50% 40%, rgba(120,200,230,0.28), rgba(10,40,60,0.55) 70%, rgba(0,12,20,0.75)); }
 .lid {
   position: absolute; inset: 0; pointer-events: none; opacity: 0;
   background: radial-gradient(ellipse at center, #1c0605 0%, #000 78%);
@@ -188,6 +190,7 @@ h1 {
   <div class="stage" id="stage">
     <div class="view" id="view">
       <div id="gl"></div>
+      <div id="grade"></div>
       <div class="vig" id="vig"></div>
       <div class="lid" id="lid"></div>
       <div class="dir" id="dir" aria-hidden="true"><i id="dirArrow"></i><span>It</span></div>
@@ -259,19 +262,20 @@ Look at it to freeze it. Back away to win some distance.</p>
   } catch (e) { fail("This browser could not start WebGL."); return; }
   renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.5));
   renderer.outputEncoding = THREE.sRGBEncoding;
-  renderer.setClearColor(0x000000);
+  renderer.setClearColor(0x02080b);
   el.gl.appendChild(renderer.domElement);
 
   var scene = new THREE.Scene();
-  scene.fog = new THREE.FogExp2(0x030504, 0.125);
+  var FOG_COL = 0x0d222a, FOG_DEN = 0.095, AMB_COL = 0x1d3846, AMB_K = 0.75;   // cold teal haze
+  scene.fog = new THREE.FogExp2(FOG_COL, FOG_DEN);
   var camera = new THREE.PerspectiveCamera(72, 16 / 9, 0.1, 60);
   camera.rotation.order = "YXZ";
   scene.add(camera);
-  var ambLight = new THREE.AmbientLight(0x101614, 0.4); scene.add(ambLight);
+  var ambLight = new THREE.AmbientLight(AMB_COL, AMB_K); scene.add(ambLight);
 
   var pool = [];
   for (var li = 0; li < 8; li++) {
-    var pl = new THREE.PointLight(0x2bff88, 2.2, 13, 1.6);
+    var pl = new THREE.PointLight(0x36d6c8, 2.2, 13, 1.6);
     pl.position.set(0, -50, 0); scene.add(pl); pool.push(pl);
   }
 
@@ -360,7 +364,7 @@ Look at it to freeze it. Back away to win some distance.</p>
   }
   var wallTex = sheetTex(TEXDATA.wall, true), floorTex = sheetTex(TEXDATA.floor, true), ceilTex = sheetTex(TEXDATA.ceil, true), woodTex = sheetTex(TEXDATA.wood, false);
   var wallMat = new THREE.MeshStandardMaterial({ map: wallTex, color: 0x626262, roughness: 0.92, metalness: 0 });
-  var floorMat = new THREE.MeshStandardMaterial({ map: floorTex, color: 0x5e5e5e, roughness: 0.42, metalness: 0.18 });
+  var floorMat = new THREE.MeshStandardMaterial({ map: floorTex, color: 0x56605f, roughness: 0.26, metalness: 0.32 });   // wet concrete
   var ceilMat = new THREE.MeshStandardMaterial({ map: ceilTex, roughness: 1, metalness: 0 });
   var woodMat2 = new THREE.MeshStandardMaterial({ map: woodTex, roughness: 0.9, emissive: 0x0d0805 });
   var redLampMat = new THREE.MeshBasicMaterial({ color: 0xff3a22 });
@@ -384,7 +388,10 @@ Look at it to freeze it. Back away to win some distance.</p>
     if (!grafCache[key]) {
       var t = texLoader.load("graffiti/" + key + ".png");
       t.encoding = THREE.sRGBEncoding; t.anisotropy = 4;
-      grafCache[key] = new THREE.MeshStandardMaterial({ map: t, transparent: true, roughness: 1, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2 });
+      var red = paint === "blood";
+      // red paint gets a faint glow of its own so it stays readable in the dark
+      grafCache[key] = new THREE.MeshStandardMaterial({ map: t, transparent: true, roughness: red ? 0.6 : 1, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2,
+        emissive: red ? 0xffffff : 0x000000, emissiveMap: red ? t : null, emissiveIntensity: red ? 0.32 : 0 });
     }
     return grafCache[key];
   }
@@ -836,7 +843,7 @@ Look at it to freeze it. Back away to win some distance.</p>
     [-0.8, 0.8].forEach(function (o) { addBox(g, benchMat, 0.06, 0.45, 0.4, bx, 0.22, zc + o); });
     blockers.push({ x0: 3.0, x1: 5.95, z0: zA, z1: zB });
     blockers.push({ x0: bx - 0.35, x1: bx + 0.45, z0: zc - 1.0, z1: zc + 1.0 });
-    lightSrc.push({ x: 5.0, y: 2.7, z: zc, c: 0xcfe6df, k: 1.5, dist: 11, tube: true });
+    lightSrc.push({ x: 5.0, y: 2.7, z: zc, c: 0xa8dcf0, k: 1.7, dist: 11, tube: true });
     startBench = { x: bx, z: zc };
     levelGroup.add(g);
   }
@@ -1055,8 +1062,8 @@ Look at it to freeze it. Back away to win some distance.</p>
   function leaveCity() {
     if (!cityMode) return;
     cityMode = false; camY = 0; if (cityGroup) cityGroup.visible = false; if (levelGroup) levelGroup.visible = true;
-    scene.fog.color.setHex(0x030504); scene.fog.density = 0.125; renderer.setClearColor(0x000000);
-    camera.far = 60; camera.updateProjectionMatrix(); ambLight.color.setHex(0x101614); ambLight.intensity = 0.4;
+    scene.fog.color.setHex(FOG_COL); scene.fog.density = FOG_DEN; renderer.setClearColor(0x02080b);
+    camera.far = 60; camera.updateProjectionMatrix(); ambLight.color.setHex(AMB_COL); ambLight.intensity = AMB_K;
   }
   function cityStep(dt) {
     cityT += dt;
@@ -1071,6 +1078,70 @@ Look at it to freeze it. Back away to win some distance.</p>
     cityBlink.forEach(function (b, bi) { b.material.opacity = (Math.sin(tt * 5 + bi) > 0.2) ? 0.9 : 0.08; });
     lightT -= dt; if (lightT <= 0) { updateLights(); lightT = 0.12; }
     updateRig(entRig || { t: 0, skins: [], bones: {}, root: ent, mixer: { update: function () {} } }, dt * 0.5, false);
+  }
+
+  /* ---------- Litter: torn paper, crumpled balls, cans, puddles ---------- */
+  function paperTex(kind) {
+    var t = canvasTex(128, 128, function (c, w, h) {
+      c.clearRect(0, 0, w, h);
+      // torn outline
+      c.beginPath();
+      var pts = 14;
+      for (var i = 0; i < pts; i++) {
+        var a = i / pts * Math.PI * 2, r = 0.36 + Math.random() * 0.12 + (i % 3 === 0 ? -0.08 * Math.random() : 0);
+        var px2 = w / 2 + Math.cos(a) * w * r * (kind === 1 ? 1.15 : 1), py2 = h / 2 + Math.sin(a) * h * r * (kind === 1 ? 0.75 : 1);
+        if (i === 0) c.moveTo(px2, py2); else c.lineTo(px2, py2);
+      }
+      c.closePath(); c.save(); c.clip();
+      var base = ["#b9b2a0", "#a49a82", "#c4c0b4", "#8f8774"][kind];
+      c.fillStyle = base; c.fillRect(0, 0, w, h);
+      // newsprint lines on two of the kinds
+      if (kind === 0 || kind === 2) { c.fillStyle = "rgba(40,36,30,0.45)"; for (var y = 18; y < h - 14; y += 6) { var cut = Math.random() * 40; c.fillRect(16, y, w * 0.38 - cut * 0.3, 2); c.fillRect(w * 0.54, y, w * 0.32 - cut * 0.2, 2); } }
+      if (kind === 3) { c.fillStyle = "rgba(30,40,60,0.6)"; c.fillRect(26, 30, 70, 14); }
+      // dirt, footprints, water stains
+      for (var k = 0; k < 9; k++) { var g = c.createRadialGradient(Math.random() * w, Math.random() * h, 1, Math.random() * w, Math.random() * h, 20 + Math.random() * 40); g.addColorStop(0, "rgba(40,32,22,0.55)"); g.addColorStop(1, "rgba(40,32,22,0)"); c.fillStyle = g; c.fillRect(0, 0, w, h); }
+      for (var d = 0; d < 260; d++) { c.fillStyle = "rgba(20,16,10," + (Math.random() * 0.35).toFixed(2) + ")"; c.fillRect(Math.random() * w, Math.random() * h, 2, 2); }
+      c.restore();
+    });
+    return t;
+  }
+  var paperMats = null, ballMat = null, canMat = null, puddleTex = null, puddleMat2 = null;
+  function litterMats() {
+    if (paperMats) return;
+    paperMats = [0, 1, 2, 3].map(function (k) { return new THREE.MeshStandardMaterial({ map: paperTex(k), transparent: true, alphaTest: 0.5, roughness: 0.95, side: THREE.DoubleSide, polygonOffset: true, polygonOffsetFactor: -1 }); });
+    ballMat = new THREE.MeshStandardMaterial({ color: 0x9c9482, roughness: 1, flatShading: true });
+    canMat = new THREE.MeshStandardMaterial({ color: 0x6d7478, roughness: 0.35, metalness: 0.8 });
+    puddleTex = canvasTex(128, 128, function (c, w, h) {
+      c.clearRect(0, 0, w, h);
+      for (var i = 0; i < 7; i++) { var x = w / 2 + (Math.random() - 0.5) * 50, y = h / 2 + (Math.random() - 0.5) * 50, r = 18 + Math.random() * 26;
+        var g = c.createRadialGradient(x, y, r * 0.4, x, y, r); g.addColorStop(0, "rgba(255,255,255,1)"); g.addColorStop(1, "rgba(255,255,255,0)"); c.fillStyle = g; c.fillRect(0, 0, w, h); }
+    });
+    puddleMat2 = new THREE.MeshStandardMaterial({ color: 0x030607, roughness: 0.02, metalness: 0.2, transparent: true, alphaMap: puddleTex, opacity: 0.62, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2 });
+  }
+  function addLitter(L) {
+    litterMats();
+    var m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), e = new THREE.Euler(), v = new THREE.Vector3(), sc = new THREE.Vector3();
+    function inst(geo, mat, list, set) {
+      if (!list.length) return;
+      var im = new THREE.InstancedMesh(geo, mat, list.length);
+      list.forEach(function (it, i) { set(it, i); im.setMatrixAt(i, m4.compose(v, q, sc)); });
+      im.instanceMatrix.needsUpdate = true; levelGroup.add(im);
+    }
+    L.paper.forEach(function (list, k) {
+      inst(new THREE.PlaneGeometry(1, 1), paperMats[k], list, function (it, i) {
+        v.set(it[0], 0.006 + (i % 7) * 0.0012, it[1]);
+        e.set(-Math.PI / 2 + (Math.random() - 0.5) * 0.25, 0, it[2]); q.setFromEuler(e); sc.set(it[3], it[3], 1);
+      });
+    });
+    inst(new THREE.IcosahedronGeometry(1, 0), ballMat, L.ball, function (it) {
+      v.set(it[0], it[2] * 0.8, it[1]); e.set(Math.random() * 3, Math.random() * 3, Math.random() * 3); q.setFromEuler(e); sc.set(it[2] * 1.2, it[2], it[2] * 1.1);
+    });
+    inst(new THREE.CylinderGeometry(0.033, 0.033, 0.12, 10), canMat, L.can, function (it) {
+      v.set(it[0], 0.033, it[1]); e.set(0, it[2], Math.PI / 2); q.setFromEuler(e); sc.set(1, Math.random() < 0.4 ? 0.6 : 1, 1);
+    });
+    inst(new THREE.PlaneGeometry(1, 1), puddleMat2, L.pud, function (it) {
+      v.set(it[0], 0.009, it[1]); e.set(-Math.PI / 2, 0, it[2]); q.setFromEuler(e); sc.set(it[3], it[4], 1);
+    });
   }
 
   function buildLevel(hunt) {
@@ -1262,6 +1333,24 @@ Look at it to freeze it. Back away to win some distance.</p>
         }
       }
     })();
+    // Litter on the floor: torn dirty paper, crumpled balls, cans; dark reflective puddles.
+    var litter = { paper: [[], [], [], []], ball: [], can: [], pud: [] };
+    function litterCell(cx0, cz0, n) {
+      for (var q = 0; q < n; q++) {
+        var nearWall = Math.random() < 0.6, ox = (Math.random() - 0.5) * (nearWall ? 2.6 : 1.6), oz = (Math.random() - 0.5) * (nearWall ? 2.6 : 1.6);
+        litter.paper[Math.floor(Math.random() * 4)].push([cx0 + ox, cz0 + oz, Math.random() * 6.28, 0.3 + Math.random() * 0.4]);
+      }
+      if (Math.random() < 0.45) litter.ball.push([cx0 + (Math.random() - 0.5) * 2.4, cz0 + (Math.random() - 0.5) * 2.4, 0.05 + Math.random() * 0.05]);
+      if (Math.random() < 0.25) litter.can.push([cx0 + (Math.random() - 0.5) * 2.4, cz0 + (Math.random() - 0.5) * 2.4, Math.random() * 6.28]);
+      if (Math.random() < 0.35) litter.pud.push([cx0 + (Math.random() - 0.5) * 1.4, cz0 + (Math.random() - 0.5) * 1.4, Math.random() * 6.28, 0.9 + Math.random() * 1.3, 0.6 + Math.random() * 0.9]);
+    }
+    for (z = 1; z < gh - 1; z++) for (x = 1; x < gw - 1; x++) {
+      if (grid[z][x] !== 0 || trainSet[z * 1000 + x]) continue;
+      if (x <= 1 && z >= cy - 2 && z <= cy + 2) continue;            // the track bed in the wake-up room
+      if (railHall && x >= railHall.xa && x <= railHall.xb && z === railHall.z0 + 1) continue;
+      litterCell((x + 0.5) * CELL, (z + 0.5) * CELL, Math.random() < 0.85 ? 4 + Math.floor(Math.random() * 9) : 1);
+    }
+    addLitter(litter);
     // Props from the real station: wooden barriers along the walls, puddles, dead fluorescent tubes.
     var pcount = 0;
     for (z = 1; z < gh - 1; z++) for (x = 1; x < gw - 1; x++) {
@@ -1304,7 +1393,7 @@ Look at it to freeze it. Back away to win some distance.</p>
         levelGroup.add(tb);
         if (lit) {
           var gs = new THREE.Sprite(tubeGlowMat); gs.scale.set(2.6, 1.4, 1); gs.position.copy(tb.position); gs.position.y -= 0.2; levelGroup.add(gs);
-          lightSrc.push({ x: tb.position.x, y: WALL_H - 0.4, z: tb.position.z, c: 0xcfe6ff, k: 1.9, dist: 12, tube: true });
+          lightSrc.push({ x: tb.position.x, y: WALL_H - 0.4, z: tb.position.z, c: 0x9fd6f0, k: 2.1, dist: 12, tube: true });
         }
       }
     }
@@ -1315,7 +1404,7 @@ Look at it to freeze it. Back away to win some distance.</p>
       var key = gx + "," + gz + "," + di;
       if (usedFace[key]) return false;
       usedFace[key] = true;
-      var dx = DIRS[di][0], dz = DIRS[di][1], gwid = w || 2.4;
+      var dx = DIRS[di][0], dz = DIRS[di][1], gwid = (w || 2.4) * (paint === "blood" ? 1.2 : 1);
       var gm = new THREE.Mesh(new THREE.PlaneGeometry(gwid, gwid * 0.375), graffitiMat(name, paint));
       gm.position.set((gx + 0.5) * CELL + dx * (CELL / 2 + 0.014), y, (gz + 0.5) * CELL + dz * (CELL / 2 + 0.014));
       gm.rotation.y = Math.atan2(dx, dz); gm.rotation.z = (Math.random() - 0.5) * 0.06;
@@ -1362,7 +1451,8 @@ Look at it to freeze it. Back away to win some distance.</p>
       var wx = 1 + Math.floor(Math.random() * (gw - 2)), wz = 1 + Math.floor(Math.random() * (gh - 2));
       if (grid[wz][wx] !== 1) continue;
       var di = Math.floor(Math.random() * 4), pdx = DIRS[di][0], pdz = DIRS[di][1];
-      if (grid[wz + pdz][wx + pdx] !== 0) continue;
+      if (grid[wz + pdz][wx + pdx] !== 0 || usedFace[wx + "," + wz + "," + di]) continue;   // never over graffiti
+      usedFace[wx + "," + wz + "," + di] = true;
       var nm = (p > 0.5 && Math.random() < 0.4) ? "Kymlinge" : NAMES[Math.floor(Math.random() * NAMES.length)];
       var pt = plateTexture(corrupt(nm, p)); texKeep.push(pt);
       var pm = new THREE.Mesh(new THREE.PlaneGeometry(1.6, 0.5), new THREE.MeshStandardMaterial({ map: pt, roughness: 0.9 }));
@@ -1375,7 +1465,7 @@ Look at it to freeze it. Back away to win some distance.</p>
   }
 
   var poolK = [], poolTube = [];
-  var mist = [], mistMat = new THREE.SpriteMaterial({ map: fogTex(), color: 0x8a9a98, depthWrite: false, transparent: true, opacity: 0.2 });
+  var mist = [], mistMat = new THREE.SpriteMaterial({ map: fogTex(), color: 0x7fb4c4, depthWrite: false, transparent: true, opacity: 0.26 });
   function mistTick(tt) {
     for (var i = 0; i < mist.length; i++) { var m = mist[i], u = m.userData; m.position.x = u.bx + Math.sin(tt * u.sp + u.ph) * 0.9; m.position.z = u.bz + Math.cos(tt * u.sp * 0.8 + u.ph) * 0.7; }
   }
@@ -1386,7 +1476,7 @@ Look at it to freeze it. Back away to win some distance.</p>
       if (arr[i]) {
         var src = arr[i].s;
         pool[i].position.set(src.x, src.y - 0.3, src.z);
-        pool[i].color.setHex(src.c || 0x2bff88); pool[i].distance = src.dist || 13;
+        pool[i].color.setHex(src.c || 0x36d6c8); pool[i].distance = src.dist || 13;
         poolK[i] = src.k || 1.5; poolTube[i] = !!src.tube;
       } else { pool[i].position.set(0, -50, 0); poolK[i] = 0; }
       pool[i].intensity = poolK[i] * (poolTube[i] ? tubeFlick : 0.7 + 0.3 * tubeFlick);
