@@ -373,21 +373,22 @@ Look at it to freeze it. Back away to win some distance.</p>
   }
   var tubeGlowMat = new THREE.SpriteMaterial({ map: glowSpriteTex(), blending: THREE.AdditiveBlending, depthWrite: false, transparent: true, opacity: 0.55 });
   var tubeFlick = 1, baseFlick = 1, flickT = 1, flickSeq = 0;
-  // Spray-paint graffiti, as on the tunnel walls in the reference.
-  function graffitiTexture(txt, col) {
-    return canvasTex(256, 96, function (c, w, h) {
-      c.clearRect(0, 0, w, h);
-      var fs = 46; c.font = "bold " + fs + "px 'Archivo Narrow', Impact, Arial";
-      while (c.measureText(txt).width > w - 24 && fs > 18) { fs -= 2; c.font = "bold " + fs + "px 'Archivo Narrow', Impact, Arial"; }
-      c.textAlign = "center"; c.textBaseline = "middle";
-      c.translate(w / 2, h / 2); c.rotate(-0.06);
-      c.fillStyle = col; c.shadowColor = col; c.shadowBlur = 5;
-      c.fillText(txt, 0, 0);
-      c.shadowBlur = 0;
-      for (var i = 0; i < 160; i++) { c.fillStyle = "rgba(0,0,0,0.5)"; c.fillRect(-w / 2 + Math.random() * w, -h / 2 + Math.random() * h, 2, 2); }
-      c.fillStyle = col; for (var d = 0; d < 5; d++) c.fillRect(-60 + Math.random() * 120, 14, 2, 12 + Math.random() * 26);
-    });
+  // Hand-painted wall writing: PNGs in graffiti/black (paint) and graffiti/blood, loaded once and shared.
+  var GRAFFITI = ["get-out", "ga-harifran", "turn-back", "don-t-blink", "it-sees-you", "don-t-look-back", "lamna-stationen", "run",
+    "no-exit", "it-watches", "sov-inte", "du-ar-inte-ensam", "kymlinge", "silverpilen", "vand-om", "don-t-sleep",
+    "look-behind-you", "face-your-fears", "it-s-behind-you", "don-t-turn-around", "keep-your-eyes-open", "nobody-leaves",
+    "the-last-train-never-came", "it-knows-your-name", "wake-up", "titta-bakom-dig", "mot-din-radsla", "han-ar-kvar"];
+  var grafCache = {};
+  function graffitiMat(name, paint) {
+    var key = paint + "/" + name;
+    if (!grafCache[key]) {
+      var t = texLoader.load("graffiti/" + key + ".png");
+      t.encoding = THREE.sRGBEncoding; t.anisotropy = 4;
+      grafCache[key] = new THREE.MeshStandardMaterial({ map: t, transparent: true, roughness: 1, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2 });
+    }
+    return grafCache[key];
   }
+  function randomPaint() { return Math.random() < 0.6 ? "black" : "blood"; }
   var puddleMat = new THREE.MeshStandardMaterial({ color: 0x080c0d, roughness: 0.04, metalness: 0.7, transparent: true, opacity: 0.88 });
   var tubeBodyMat = new THREE.MeshStandardMaterial({ color: 0x3a3c3a, roughness: 0.8 });
   var tubeDeadMat = new THREE.MeshStandardMaterial({ color: 0x1b2420, roughness: 0.3, emissive: 0x070b09 });
@@ -911,8 +912,7 @@ Look at it to freeze it. Back away to win some distance.</p>
       var tp = tapeTexture(); texKeep.push(tp);
       var tape = new THREE.Mesh(new THREE.PlaneGeometry(2.2, 0.14), new THREE.MeshStandardMaterial({ map: tp, roughness: 0.7 }));
       tape.position.set(0, 2.5, CELL / 2 - 0.115); tape.rotation.y = Math.PI; tape.rotation.z = 0.5; g.add(tape);
-      var sgt = graffitiTexture("STÄNGD", "#d9d6cf"); texKeep.push(sgt);
-      var sgm = new THREE.Mesh(new THREE.PlaneGeometry(1.2, 0.45), new THREE.MeshStandardMaterial({ map: sgt, transparent: true, roughness: 1, depthWrite: false }));
+      var sgm = new THREE.Mesh(new THREE.PlaneGeometry(1.2, 0.45), graffitiMat("stangd", "black"));
       sgm.position.set(0, 2.2 + 0.55, CELL / 2 - 0.125); sgm.rotation.y = Math.PI; g.add(sgm);
       var lamp = new THREE.Mesh(new THREE.SphereGeometry(0.09, 8, 6), warmLampMat); lamp.position.set(0, 2.85, 1.1); g.add(lamp);
       var cage = new THREE.Mesh(new THREE.SphereGeometry(0.16, 8, 6), cageMat); cage.position.copy(lamp.position); g.add(cage);
@@ -1312,24 +1312,49 @@ Look at it to freeze it. Back away to win some distance.</p>
       }
     }
 
-    // Red signal lamps on the walls, and graffiti.
-    var extras = 0, tr2 = 0, GR = ["GET OUT", "GÅ HÄRIFRÅN", "TURN BACK", "DON'T BLINK", "IT SEES YOU", "DON'T LOOK BACK", "LÄMNA STATIONEN", "RUN", "NO EXIT", "IT WATCHES", "SOV INTE", "DU ÄR INTE ENSAM", "KYMLINGE", "SILVERPILEN", "VÄND OM", "DON'T SLEEP"], GC = ["#c8352c", "#c8352c", "#d9d6cf", "#b8b13a"];
-    while (extras < 22 && tr2 < 500) {
+    // Graffiti. Each wall face gets at most one.
+    var usedFace = {};
+    function putGraffiti(gx, gz, di, name, paint, y, w) {
+      var key = gx + "," + gz + "," + di;
+      if (usedFace[key]) return false;
+      usedFace[key] = true;
+      var dx = DIRS[di][0], dz = DIRS[di][1], gwid = w || 2.4;
+      var gm = new THREE.Mesh(new THREE.PlaneGeometry(gwid, gwid * 0.375), graffitiMat(name, paint));
+      gm.position.set((gx + 0.5) * CELL + dx * (CELL / 2 + 0.014), y, (gz + 0.5) * CELL + dz * (CELL / 2 + 0.014));
+      gm.rotation.y = Math.atan2(dx, dz); gm.rotation.z = (Math.random() - 0.5) * 0.06;
+      levelGroup.add(gm);
+      return true;
+    }
+    // The wake-up room: four messages around the bench, "look behind you" on the pillar behind it.
+    (function () {
+      var faces = [], bxw = startBench ? startBench.x : 7.4, bzw = startBench ? startBench.z : (cy + 0.5) * CELL;
+      for (z = cy - 3; z <= cy + 3; z++) for (x = 2; x <= 6; x++) {
+        if (grid[z][x] !== 1) continue;
+        for (i = 0; i < 4; i++) {
+          var ox = x + DIRS[i][0], oz = z + DIRS[i][1];
+          if (ox < 2 || ox > 5 || oz < cy - 2 || oz > cy + 2 || grid[oz][ox] !== 0) continue;
+          var fx = (x + 0.5) * CELL + DIRS[i][0] * CELL / 2, fz = (z + 0.5) * CELL + DIRS[i][1] * CELL / 2;
+          faces.push({ x: x, z: z, d: i, dist: Math.hypot(fx - bxw, fz - bzw) });
+        }
+      }
+      faces.sort(function (p, q) { return p.dist - q.dist; });
+      var behind = faces.filter(function (f) { return f.d === 1; })[0];   // faces back toward the bench
+      if (behind) putGraffiti(behind.x, behind.z, behind.d, "look-behind-you", "blood", 1.35, 2.6);
+      ["wake-up", "don-t-blink", "face-your-fears"].forEach(function (nm, k) {
+        for (var q = 0; q < faces.length; q++) {
+          if (putGraffiti(faces[q].x, faces[q].z, faces[q].d, nm, k === 1 ? "blood" : "black", 1.2 + Math.random() * 0.35, 2.6)) break;
+        }
+      });
+    })();
+    // Everywhere else: about one in three wall faces, a random message.
+    var extras = 0, tr2 = 0, wantG = Math.min(70, Math.max(30, Math.floor(wc.length * 0.45)));
+    while (extras < wantG && tr2 < 3000) {
       tr2++;
       var gx2 = 1 + Math.floor(Math.random() * (gw - 2)), gz2 = 1 + Math.floor(Math.random() * (gh - 2));
-      if (grid[gz2][gx2] !== 1) continue;
-      var gdi = Math.floor(Math.random() * 4), gdx = DIRS[gdi][0], gdz = DIRS[gdi][1];
-      if (grid[gz2 + gdz][gx2 + gdx] !== 0) continue;
-      var wxp = (gx2 + 0.5) * CELL + gdx * (CELL / 2 + 0.012), wzp = (gz2 + 0.5) * CELL + gdz * (CELL / 2 + 0.012);
-      if (false) {
-        var lamp = new THREE.Mesh(new THREE.SphereGeometry(0.07, 8, 6), redLampMat);
-        lamp.position.set(wxp - gdx * -0.02, 1.4, wzp - gdz * -0.02); levelGroup.add(lamp);
-      } else {
-        var gt = graffitiTexture(GR[Math.floor(Math.random() * GR.length)], GC[Math.floor(Math.random() * GC.length)]); texKeep.push(gt);
-        var gm = new THREE.Mesh(new THREE.PlaneGeometry(1.9, 0.72), new THREE.MeshStandardMaterial({ map: gt, transparent: true, roughness: 1, depthWrite: false }));
-        gm.position.set(wxp, 0.9 + Math.random() * 0.9, wzp); gm.rotation.y = Math.atan2(gdx, gdz); levelGroup.add(gm);
-      }
-      extras++;
+      if (grid[gz2][gx2] !== 1 || trainSet[gz2 * 1000 + gx2]) continue;
+      var gdi = Math.floor(Math.random() * 4);
+      if (grid[gz2 + DIRS[gdi][1]][gx2 + DIRS[gdi][0]] !== 0) continue;
+      if (putGraffiti(gx2, gz2, gdi, GRAFFITI[Math.floor(Math.random() * GRAFFITI.length)], randomPaint(), 1.0 + Math.random() * 0.9, 2.0 + Math.random() * 0.7)) extras++;
     }
 
     // station name plates
