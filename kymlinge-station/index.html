@@ -1115,6 +1115,54 @@ Look at it to freeze it. Back away to win some distance.</p>
   var sleeperMat = new THREE.MeshStandardMaterial({ color: 0x2b2018, roughness: 1 });
   var trainMat = new THREE.MeshStandardMaterial({ color: 0xaab4b8, metalness: 0.75, roughness: 0.36, emissive: 0x0b1114 });
   var trainDark = new THREE.MeshStandardMaterial({ color: 0x15191b, metalness: 0.5, roughness: 0.6 });
+  var trainBlue = new THREE.MeshStandardMaterial({ color: 0x2f6fc0, metalness: 0.3, roughness: 0.5, emissive: 0x050b16 });
+  // The old Stockholm "C" series: blue body, pale stripe, brown doors, windows glowing amber, SL roundel on the nose.
+  function amberWin(c, x, y, w, h, lit) {
+    c.fillStyle = "#0b1626"; c.fillRect(x - 5, y - 5, w + 10, h + 10);
+    var gr = c.createLinearGradient(0, y, 0, y + h); gr.addColorStop(0, lit ? "#f0bf72" : "#5a3d1c"); gr.addColorStop(1, lit ? "#8e5426" : "#2b1c0c");
+    c.fillStyle = gr; c.fillRect(x, y, w, h);
+    c.fillStyle = lit ? "rgba(60,30,10,0.55)" : "rgba(0,0,0,0.5)"; c.fillRect(x + w * 0.1, y + h * 0.62, w * 0.34, h * 0.38); c.fillRect(x + w * 0.56, y + h * 0.62, w * 0.34, h * 0.38);
+  }
+  function trainSideTextures(tl) {
+    var PPM = 100, W = Math.round(tl * PPM), H = 275, c1 = document.createElement("canvas"), c2 = document.createElement("canvas"), i;
+    c1.width = c2.width = W; c1.height = c2.height = H;
+    var c = c1.getContext("2d"), e = c2.getContext("2d");
+    var gr = c.createLinearGradient(0, 0, 0, H); gr.addColorStop(0, "#3378cc"); gr.addColorStop(1, "#1f56a6"); c.fillStyle = gr; c.fillRect(0, 0, W, H);
+    e.fillStyle = "#000"; e.fillRect(0, 0, W, H);
+    c.fillStyle = "#dfe3e4"; c.fillRect(0, 150, W, 14); c.fillStyle = "#b9c0c4"; c.fillRect(0, 168, W, 5);    // the pale stripe
+    c.fillStyle = "rgba(0,0,0,0.18)"; for (i = 0; i < 4; i++) c.fillRect(0, 188 + i * 22, W, 3);              // ribs
+    c.fillStyle = "rgba(255,255,255,0.1)"; for (i = 0; i < 4; i++) c.fillRect(0, 191 + i * 22, W, 2);
+    c.fillStyle = "#101c2c"; c.fillRect(0, H - 30, W, 30);
+    var doors = []; for (var k = 0; k < 6; k++) { var d = 250 + 500 * k; if (d < W - 100) doors.push(d); }
+    doors.forEach(function (d) {
+      c.fillStyle = "#19324f"; c.fillRect(d - 72, 30, 144, 215);
+      c.fillStyle = "#7d3d17"; c.fillRect(d - 65, 36, 130, 203); c.fillStyle = "#5e2b0e"; c.fillRect(d - 2, 36, 4, 203);
+      [[-56, 0], [8, 0]].forEach(function (o) { amberWin(c, d + o[0], 56, 48, 100, true); amberWin(e, d + o[0], 56, 48, 100, true); });
+      c.fillStyle = "#c9ced0"; c.fillRect(d - 65, 200, 130, 4);
+    });
+    for (k = -1; k < 6; k++) [170, 330].forEach(function (o) {
+      var wx = 250 + 500 * k + o - 60; if (wx < 40 || wx + 120 > W - 40) return;
+      amberWin(c, wx, 45, 120, 90, true); amberWin(e, wx, 45, 120, 90, true);
+    });
+    for (i = 0; i < 900; i++) { c.fillStyle = "rgba(" + (Math.random() < 0.5 ? "0,0,0" : "255,255,255") + "," + (Math.random() * 0.08).toFixed(3) + ")"; c.fillRect(Math.random() * W, Math.random() * H, 2, 2 + Math.random() * 3); }
+    for (i = 0; i < 40; i++) { c.fillStyle = "rgba(20,15,5,0.14)"; c.fillRect(Math.random() * W, 140 + Math.random() * 60, 3, 20 + Math.random() * 60); }
+    var t1 = new THREE.CanvasTexture(c1), t2 = new THREE.CanvasTexture(c2); t1.encoding = THREE.sRGBEncoding; t2.encoding = THREE.sRGBEncoding; t1.anisotropy = t2.anisotropy = 4;
+    return { map: t1, em: t2 };
+  }
+  function trainFrontTexture() {
+    var c1 = document.createElement("canvas"), c2 = document.createElement("canvas"); c1.width = c2.width = 520; c1.height = c2.height = 550;
+    var c = c1.getContext("2d"), e = c2.getContext("2d"), gr = c.createLinearGradient(0, 0, 0, 550); gr.addColorStop(0, "#3378cc"); gr.addColorStop(1, "#1f56a6"); c.fillStyle = gr; c.fillRect(0, 0, 520, 550);
+    e.fillStyle = "#000"; e.fillRect(0, 0, 520, 550);
+    [[40, 70, 215, 175], [275, 70, 75, 175], [370, 70, 110, 175]].forEach(function (r, i) { amberWin(c, r[0], r[1], r[2], r[3], true); amberWin(e, r[0], r[1], r[2], r[3], true); });
+    c.fillStyle = "#dfe3e4"; c.fillRect(0, 290, 520, 22); c.fillStyle = "#b9c0c4"; c.fillRect(0, 318, 520, 6);
+    c.save(); c.translate(260, 400); c.strokeStyle = "#eef2f4"; c.lineWidth = 9; c.beginPath(); c.arc(0, 0, 56, 0, 6.283); c.stroke(); c.lineWidth = 4; c.beginPath(); c.arc(0, 0, 40, 0, 6.283); c.stroke();
+    c.fillStyle = "#eef2f4"; c.font = "800 44px 'Archivo', Arial, sans-serif"; c.textAlign = "center"; c.textBaseline = "middle"; c.fillText("SL", 0, 3); c.restore();
+    c.fillStyle = "#eef2f4"; c.font = "700 34px 'Archivo', Arial, sans-serif"; c.textAlign = "left"; c.fillText("1372", 330, 345);
+    [[10, 70], [450, 70]].forEach(function (b) { c.fillStyle = "#33c04a"; c.fillRect(b[0], 480, b[1], 22); c.fillStyle = "#e8a41e"; c.fillRect(b[0], 502, b[1], 30); });
+    for (var i = 0; i < 500; i++) { c.fillStyle = "rgba(" + (Math.random() < 0.5 ? "0,0,0" : "255,255,255") + "," + (Math.random() * 0.08).toFixed(3) + ")"; c.fillRect(Math.random() * 520, Math.random() * 550, 2, 3); }
+    var t1 = new THREE.CanvasTexture(c1), t2 = new THREE.CanvasTexture(c2); t1.encoding = THREE.sRGBEncoding; t2.encoding = THREE.sRGBEncoding;
+    return { map: t1, em: t2 };
+  }
   var glassMat = new THREE.MeshStandardMaterial({ color: 0x050a0c, metalness: 0.9, roughness: 0.06, emissive: 0x0a1c24 });
   var edgeMat = new THREE.MeshStandardMaterial({ color: 0xb59a16, roughness: 0.8, emissive: 0x241e02 });
   var tunnelMat = new THREE.MeshBasicMaterial({ color: 0x000000 });
@@ -1398,15 +1446,18 @@ Look at it to freeze it. Back away to win some distance.</p>
     [-1, 1].forEach(function (sd) { addBox(g, edgeMat, L, 0.012, 0.18, X0 + L / 2, 0.02, zc + sd * (CELL / 2 - 0.12)); });
     // the train, parked: silver, silent, windows dark
     var tx0 = (h.xa + 2) * CELL, tx1 = (h.xb - 1) * CELL, tl = tx1 - tx0, tc = (tx0 + tx1) / 2;
-    addBox(g, trainMat, tl, 2.75, 2.6, tc, 1.62, zc);
+    addBox(g, trainBlue, tl, 2.75, 2.6, tc, 1.62, zc);
     addBox(g, trainDark, tl + 0.02, 0.35, 2.64, tc, 0.28, zc);
     addBox(g, trainDark, tl + 0.02, 0.12, 2.64, tc, 3.02, zc);
-    [-1, 1].forEach(function (sd) {
-      addBox(g, glassMat, tl - 0.8, 0.9, 0.04, tc, 2.0, zc + sd * 1.31);
-      for (var dxm = tx0 + 3; dxm < tx1 - 1; dxm += 4.5) addBox(g, trainDark, 0.07, 2.2, 0.05, dxm, 1.5, zc + sd * 1.31);
+    var sideT = trainSideTextures(tl), frontT = trainFrontTexture();
+    var sideM = new THREE.MeshStandardMaterial({ map: sideT.map, emissive: 0xffffff, emissiveMap: sideT.em, emissiveIntensity: 0.35, roughness: 0.45, metalness: 0.2 });
+    var frontM = new THREE.MeshStandardMaterial({ map: frontT.map, emissive: 0xffffff, emissiveMap: frontT.em, emissiveIntensity: 0.3, roughness: 0.45, metalness: 0.2 });
+    texKeep.push(sideT.map, sideT.em, frontT.map, frontT.em);
+    [[1, 0], [-1, Math.PI]].forEach(function (sd) {
+      var sp = new THREE.Mesh(new THREE.PlaneGeometry(tl, 2.75), sideM); sp.position.set(tc, 1.62, zc + sd[0] * 1.312); sp.rotation.y = sd[1]; sp.userData.train = true; g.add(sp);
     });
     [[tx0 - 0.02, -1], [tx1 + 0.02, 1]].forEach(function (e) {
-      addBox(g, glassMat, 0.04, 0.85, 1.9, e[0], 2.1, zc);
+      var fp = new THREE.Mesh(new THREE.PlaneGeometry(2.6, 2.75), frontM); fp.position.set(e[0] + e[1] * 0.012, 1.62, zc); fp.rotation.y = e[1] * Math.PI / 2; fp.userData.train = true; g.add(fp);
       [-0.8, 0.8].forEach(function (o) {
         var hl = new THREE.Mesh(boxGeo, new THREE.MeshBasicMaterial({ color: 0xdfeaff })); hl.scale.set(0.05, 0.14, 0.3); hl.position.set(e[0] + e[1] * 0.02, 0.85, zc + o); g.add(hl);
       });
@@ -2272,7 +2323,7 @@ Look at it to freeze it. Back away to win some distance.</p>
     while (plated < 7 && tries < 200) {
       tries++;
       var wx = 1 + Math.floor(Math.random() * (gw - 2)), wz = 1 + Math.floor(Math.random() * (gh - 2));
-      if (grid[wz][wx] !== 1) continue;
+      if (grid[wz][wx] !== 1 || trainSet[wz * 1000 + wx]) continue;
       var di = Math.floor(Math.random() * 4), pdx = DIRS[di][0], pdz = DIRS[di][1];
       if (grid[wz + pdz][wx + pdx] !== 0 || usedFace[wx + "," + wz + "," + di]) continue;   // never over graffiti
       usedFace[wx + "," + wz + "," + di] = true;
@@ -3657,6 +3708,12 @@ Look at it to freeze it. Back away to win some distance.</p>
   window.__game = { start: function () { startGame(); }, ent: ent, MODEL: MODEL,
     place: function (d, y) { yaw = y || 0; pitch = 0; var fx = -Math.sin(yaw), fz = -Math.cos(yaw); ent.visible = true; ent.position.set(px + fx * d, 0, pz + fz * d); ent.rotation.y = Math.atan2(-fx, -fz); },
     rig: function () { return entRig; }, items: function () { return items.map(function (i) { return [i.type, i.x, i.z]; }); }, vis: function () { return JSON.stringify([vis.phase, +vis.t.toFixed(1), +vis.next.toFixed(1), vis.fake]); }, score: function () { return [score, lvlPts, lvlTotal, sprintLeft]; }, die: function () { die(); }, go: function (x, z, y, p) { px = x; pz = z; yaw = y; pitch = p || 0; updateLights(); }, signAt: function (i) { var g2 = signs[i]; return g2 ? [g2.x + Math.sin(g2.ry) * 2.2, g2.z + Math.cos(g2.ry) * 2.2, g2.ry, g2.kind, signs.length] : null; }, grafCheck: function () { return grafPlanes.map(function (g2) { var ox = g2.wx + g2.nx * 1.5, oz = g2.wz + g2.nz * 1.5, cx2 = Math.floor(ox / CELL), cz2 = Math.floor(oz / CELL); var n = new THREE.Vector3(0, 0, 1).applyEuler(g2.m.rotation); return grid[cz2] && grid[cz2][cx2] === 0 && Math.abs(n.x - g2.nx) < 1e-6 && Math.abs(n.z - g2.nz) < 1e-6; }); }, grafAt: function (i) { var g2 = grafPlanes[i]; if (!g2) return null; return [g2.wx + g2.nx * 1.6, g2.wz + g2.nz * 1.6, g2.m.position.y, g2.nx, g2.nz]; },
+    stray: function () {   // planes (signs, plates, graffiti) that sit on or inside the parked train, other than its own paint
+      if (!railHall) return [];
+      var h = railHall, tx0 = (h.xa + 2) * CELL, tx1 = (h.xb - 1) * CELL, zc = (h.z0 + 1.5) * CELL, out = [], v = new THREE.Vector3();
+      levelGroup.traverse(function (o) { if (!o.isMesh || o.userData.train || !(o.geometry && o.geometry.type === "PlaneGeometry")) return; o.getWorldPosition(v); if (v.x > tx0 - 0.2 && v.x < tx1 + 0.2 && Math.abs(v.z - zc) < 1.5 && v.y > 0.3 && v.y < 3.1) out.push([+v.x.toFixed(1), +v.y.toFixed(1), +v.z.toFixed(1)]); });
+      return out;
+    },
     info: function () { return { shortcuts: shortcutInfo, official: shortcutInfo.length, grid: grid.map(function (r) { return r.join(""); }), rail: railHall, stairs: stairInfo, CELL: CELL, start: startPos, exit: exitPos, exitDir: exitDir, px: px, pz: pz, yaw: yaw }; },  sfx: function () { footstep(1, 0); footstep(1.5, 8); heartBeat(0.8); return !!AC; } };
   window.__step = function (n, dt) { for (var i = 0; i < n; i++) tick(dt || 0.05); draw(); return { state: state, gmode: gmode, level: level, caught: caught }; };
 
