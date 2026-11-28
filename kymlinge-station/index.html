@@ -650,12 +650,9 @@ Look at it to freeze it. Back away to win some distance.</p>
     var head = root.getObjectByName("Head");
     if (!head) return;
     [-1, 1].forEach(function (sd) {
-      // Slightly mismatched: one eye sits higher and wider than the other.
-      var core = new THREE.Mesh(new THREE.SphereGeometry(sd > 0 ? 0.02 : 0.015, 8, 6), eyeWhiteMat);
-      core.scale.set(1.5, 0.8, 1);
-      core.position.set(sd * EYE_X * (sd > 0 ? 1.15 : 0.9), EYE_Y + (sd > 0 ? 0.014 : -0.01), EYE_Z); core.rotation.z = -sd * 0.35; head.add(core);
+      // Only a soft round glow for each eye; the hard white eye shapes read as triangles on the face.
       var glow = new THREE.Sprite(eyeHaloMat);
-      glow.scale.set(0.2, 0.2, 1); glow.position.copy(core.position); head.add(glow);
+      glow.scale.set(0.16, 0.16, 1); glow.position.set(sd * EYE_X, EYE_Y, EYE_Z); head.add(glow);
     });
   }
   function makeRig() {
