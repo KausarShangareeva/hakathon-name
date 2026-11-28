@@ -74,6 +74,10 @@ h1 {
   position: absolute; inset: 0; pointer-events: none;
   background: radial-gradient(ellipse at center, rgba(0,0,0,0) 38%, rgba(0,0,0,0.9) 100%);
 }
+.map { position: absolute; left: 12px; bottom: 12px; width: 120px; height: 120px; max-width: 34%; max-height: 34%; image-rendering: pixelated; background: rgba(0,6,4,0.55); border: 1px solid var(--line); opacity: 0.88; pointer-events: none; display: none; }
+.map.on { display: block; }
+.toast { position: absolute; left: 50%; bottom: 17%; transform: translateX(-50%); padding: 6px 14px; font-size: 13px; letter-spacing: 0.1em; text-transform: uppercase; color: #ffe9a8; background: rgba(0,0,0,0.55); border: 1px solid rgba(255,214,120,0.5); opacity: 0; transition: opacity .25s; pointer-events: none; white-space: nowrap; }
+.toast.show { opacity: 1; }
 .hud {
   position: absolute; top: 10px; left: 12px; right: 12px;
   display: flex; justify-content: space-between; gap: 12px;
@@ -147,9 +151,12 @@ h1 {
       <div id="gl"></div>
       <div class="vig" id="vig"></div>
       <div class="lid" id="lid"></div>
+      <canvas class="map" id="map" width="120" height="120" aria-hidden="true"></canvas>
+      <div class="toast" id="toast" aria-live="polite"></div>
       <div class="dir" id="dir" aria-hidden="true"><i id="dirArrow"></i><span>It</span></div>
       <div class="hud">
         <span id="levelLabel">Level 1</span>
+        <span id="scoreLabel">Points 0</span>
         <span id="bestLabel">Best 0</span>
       </div>
       <div class="overlay" id="overlay">
@@ -176,9 +183,9 @@ Look at it to freeze it. Back away to win some distance.</p>
   <div class="controls">
     <button class="ctl" id="walkBtn" type="button">Hold to walk</button>
     <button class="ctl" id="blinkBtn" type="button">Hold to blink</button>
-    <button class="ctl" id="sprintBtn" type="button">Sprint (once)</button>
+    <button class="ctl" id="sprintBtn" type="button">Sprint (1)</button>
   </div>
-  <p class="hint">Move: W A S D or arrow keys. Look: drag the view. Blink: hold Space. Sprint: Shift, once per run, 3 seconds. Full screen: F. On a touch screen, hold Walk, hold Blink, and drag the view to look.</p>
+  <p class="hint">Move: W A S D or arrow keys. Look: drag the view. Blink: hold Space. Sprint: Shift, 3 seconds, one per run plus one for every golden Dalahäst. Collect buns and Dalahästar on the floor. Full screen: F. On a touch screen, hold Walk, hold Blink, and drag the view to look.</p>
 </main>
 
 <script>
@@ -193,7 +200,7 @@ Look at it to freeze it. Back away to win some distance.</p>
   var el = {
     view: $("view"), gl: $("gl"), lid: $("lid"), vig: $("vig"),
     overlay: $("overlay"), oTitle: $("oTitle"), oBody: $("oBody"), oCta: $("oCta"),
-    level: $("levelLabel"), best: $("bestLabel"),
+    level: $("levelLabel"), score: $("scoreLabel"), best: $("bestLabel"),
     status: $("status"), statusText: $("statusText"),
     fill: $("strainFill"), gapFill: $("gapFill"), sMeter: $("strainMeter"), gMeter: $("gapMeter"),
     sprintBtn: $("sprintBtn"), walkBtn: $("walkBtn"), blinkBtn: $("blinkBtn"), soundBtn: $("soundBtn"), fsBtn: $("fsBtn"),
@@ -678,6 +685,153 @@ Look at it to freeze it. Back away to win some distance.</p>
   /* ---------- Wake-up: a bench on the platform, the track, the Kymlinge sign ---------- */
   var wake = { t: 99, grace: 0, hot: false }, startBench = null;
   var benchMat = new THREE.MeshStandardMaterial({ color: 0x2a2f2e, roughness: 0.5, metalness: 0.6 });
+
+  /* ---------- Loot, visits and the map ---------- */
+  var score = 0, lvlPts = 0, lvlTotal = 0, items = [], explored = [], lvlTime = 0, mapS = 3, cueFlickT = 0, toastT = 0;
+  var vis = { phase: "visit", t: 0, next: 0, dur: 0, fake: false, first: false, cueT: 0, hb: 0, warnLen: 0, q: [] };
+  var bunGeo = new THREE.CylinderGeometry(0.17, 0.18, 0.1, 16);
+  var bunSide = new THREE.MeshStandardMaterial({ color: 0xa8662c, roughness: 0.8, emissive: 0x2a1204 });
+  var bunTop = new THREE.MeshStandardMaterial({ roughness: 0.8, emissive: 0x2a1204, map: canvasTex(64, 64, function (c, w, h) {
+    c.fillStyle = "#b9763a"; c.fillRect(0, 0, w, h); c.strokeStyle = "#e9d2a0"; c.lineWidth = 3; c.beginPath();
+    for (var a = 0; a < 17; a += 0.15) { var r = 2 + a * 1.75; c.lineTo(w / 2 + Math.cos(a) * r, h / 2 + Math.sin(a) * r); } c.stroke();
+    c.fillStyle = "rgba(255,248,230,0.8)"; for (var i = 0; i < 22; i++) c.fillRect(Math.random() * w, Math.random() * h, 2, 2);
+  }) });
+  var goldMat = new THREE.MeshStandardMaterial({ color: 0xe6b232, metalness: 0.85, roughness: 0.28, emissive: 0x5a3b00 });
+  var goldGlow = new THREE.SpriteMaterial({ map: whiteGlowTex(), color: 0xffc83a, blending: THREE.AdditiveBlending, depthWrite: false, transparent: true, opacity: 0.8, fog: false });
+  var bunGlow = new THREE.SpriteMaterial({ map: whiteGlowTex(), color: 0xff9a4a, blending: THREE.AdditiveBlending, depthWrite: false, transparent: true, opacity: 0.4, fog: false });
+  function makeBun() {
+    var g = new THREE.Group(), m = new THREE.Mesh(bunGeo, [bunSide, bunTop, bunSide]); m.position.y = 0.3; g.add(m);
+    var gl = new THREE.Sprite(bunGlow); gl.scale.set(0.9, 0.9, 1); gl.position.y = 0.3; g.add(gl); return g;
+  }
+  function makeHorse() {
+    var g = new THREE.Group(), h = new THREE.Group();
+    addBox(h, goldMat, 0.46, 0.24, 0.14, 0, 0.36, 0);
+    addBox(h, goldMat, 0.14, 0.3, 0.12, 0.2, 0.55, 0, 0).rotation.z = -0.35;
+    addBox(h, goldMat, 0.22, 0.12, 0.12, 0.32, 0.72, 0);
+    addBox(h, goldMat, 0.05, 0.1, 0.05, 0.28, 0.8, 0);
+    addBox(h, goldMat, 0.05, 0.2, 0.08, -0.26, 0.4, 0).rotation.z = 0.5;
+    [[-0.18, -0.04], [-0.18, 0.04], [0.18, -0.04], [0.18, 0.04]].forEach(function (l) { addBox(h, goldMat, 0.06, 0.26, 0.05, l[0], 0.13, l[1]); });
+    addBox(h, goldMat, 0.4, 0.04, 0.16, 0, 0.0, 0);
+    var sad = new THREE.Mesh(boxGeo, new THREE.MeshStandardMaterial({ color: 0xb02020, emissive: 0x300505, roughness: 0.6 })); sad.scale.set(0.2, 0.05, 0.16); sad.position.set(0, 0.5, 0); h.add(sad);
+    h.scale.set(1.25, 1.25, 1.25); h.position.y = 0.12; g.add(h);
+    var gl = new THREE.Sprite(goldGlow); gl.scale.set(2.6, 2.6, 1); gl.position.y = 0.6; g.add(gl); return g;
+  }
+  function addItems(b0, exit) {
+    items = []; lvlPts = 0; lvlTotal = 0;
+    var cyy = Math.floor(gh / 2), cs = [], x, z, i;
+    for (z = 1; z < gh - 1; z++) for (x = 1; x < gw - 1; x++) {
+      if (grid[z][x] !== 0 || (x <= 5 && Math.abs(z - cyy) <= 2) || (x === exit[0] && z === exit[1]) || b0.d[z][x] < 3) continue;
+      cs.push([x, z, b0.d[z][x]]);
+    }
+    for (i = cs.length - 1; i > 0; i--) { var j = Math.floor(Math.random() * (i + 1)), t0 = cs[i]; cs[i] = cs[j]; cs[j] = t0; }
+    var far = cs.filter(function (c) { return c[2] >= 10; });
+    var nH = level >= 3 ? 3 : 2, nB = Math.min(30, 16 + 2 * level), placed = 0, k;
+    function put(c, type) {
+      var wx, wz, tr = 0;
+      do { wx = (c[0] + 0.5) * CELL + (Math.random() - 0.5) * 1.8; wz = (c[1] + 0.5) * CELL + (Math.random() - 0.5) * 1.8; } while (inBlock(wx, wz) && tr++ < 6);
+      if (inBlock(wx, wz)) return false;
+      var m = type === "horse" ? makeHorse() : makeBun(); m.position.set(wx, 0, wz); m.rotation.y = Math.random() * 6.28; levelGroup.add(m);
+      var pts = type === "horse" ? 50 : 2; lvlTotal += pts; items.push({ x: wx, z: wz, type: type, mesh: m, pts: pts, ph: Math.random() * 6.28 }); return true;
+    }
+    for (k = 0; k < far.length && placed < nH; k++) if (put(far[k], "horse")) placed++;
+    for (k = 0; k < cs.length && placed < nH; k++) if (put(cs[k], "horse")) placed++;
+    var nb = 0; for (k = 0; k < cs.length && nb < nB; k++) { if (put(cs[k], "bun")) nb++; }
+  }
+  function initMap() {
+    explored = []; for (var z = 0; z < gh; z++) explored[z] = new Uint8Array(gw);
+    mapS = Math.max(2, Math.floor(150 / Math.max(gw, gh)));
+    var cv = document.getElementById("map"); cv.width = gw * mapS; cv.height = gh * mapS; cv.style.width = Math.min(gw * mapS * 1.15, 190) + "px"; cv.style.height = (parseFloat(cv.style.width) * gh / gw) + "px";
+  }
+  var mapT = 0;
+  function mapTick(dt) {
+    var cv = document.getElementById("map"), on = state === "play" && gmode !== "hunt" && !cityMode && explored.length > 0;
+    cv.classList.toggle("on", on); if (!on) return;
+    var pcx = Math.floor(px / CELL), pcz = Math.floor(pz / CELL), x, z;
+    for (z = pcz - 2; z <= pcz + 2; z++) for (x = pcx - 2; x <= pcx + 2; x++) if (z >= 0 && x >= 0 && z < gh && x < gw && (x - pcx) * (x - pcx) + (z - pcz) * (z - pcz) <= 5) explored[z][x] = 1;
+    mapT -= dt; if (mapT > 0) return; mapT = 0.1;
+    var c = cv.getContext("2d"), S = mapS; c.clearRect(0, 0, cv.width, cv.height);
+    for (z = 0; z < gh; z++) for (x = 0; x < gw; x++) {
+      var seen2 = explored[z][x];
+      if (grid[z][x] === 0) { if (seen2) { c.fillStyle = "rgba(70,190,130,0.62)"; c.fillRect(x * S, z * S, S, S); } }
+      else if (z > 0 && x > 0 && z < gh - 1 && x < gw - 1 && (explored[z - 1][x] || explored[z + 1][x] || explored[z][x - 1] || explored[z][x + 1]) && !trainSet[z * 1000 + x]) { c.fillStyle = "rgba(14,50,36,0.95)"; c.fillRect(x * S, z * S, S, S); }
+      else if (trainSet[z * 1000 + x] && explored[z][x - 1]) { c.fillStyle = "rgba(170,180,185,0.8)"; c.fillRect(x * S, z * S, S, S); }
+    }
+    var ex = Math.floor(exitPos.x / CELL), ez = Math.floor(exitPos.z / CELL);
+    if (explored[ez] && explored[ez][ex]) { c.fillStyle = (Math.floor(t * 2) % 2) ? "#ffe9a8" : "#fff"; c.fillRect(ex * S - 1, ez * S - 1, S + 2, S + 2); }
+    var ax = px / CELL * S, az = pz / CELL * S, fx = -Math.sin(yaw), fz = -Math.cos(yaw);
+    c.fillStyle = "#e8fff2"; c.beginPath(); c.moveTo(ax + fx * 5, az + fz * 5); c.lineTo(ax - fz * 3 - fx * 3, az + fx * 3 - fz * 3); c.lineTo(ax + fz * 3 - fx * 3, az - fx * 3 - fz * 3); c.closePath(); c.fill();
+  }
+  function showToast(txt) { var e = document.getElementById("toast"); e.textContent = txt; e.classList.add("show"); toastT = 1.9; }
+  function chime(big) {
+    if (!AC || !soundOn) return;
+    try {
+      (big ? [659, 880, 1175, 1568] : [988, 1319]).forEach(function (f, i) {
+        var o = AC.createOscillator(), g = AC.createGain(), t0 = AC.currentTime + i * 0.07; o.type = "triangle"; o.frequency.value = f;
+        g.gain.setValueAtTime(0, t0); g.gain.linearRampToValueAtTime(big ? 0.12 : 0.06, t0 + 0.01); g.gain.exponentialRampToValueAtTime(0.0008, t0 + (big ? 0.9 : 0.3));
+        o.connect(g); g.connect(master); o.start(t0); o.stop(t0 + 1);
+      });
+    } catch (e) {}
+  }
+  function collect(it) {
+    levelGroup.remove(it.mesh); items.splice(items.indexOf(it), 1);
+    score += it.pts; lvlPts += it.pts; updateHud();
+    if (it.type === "horse") { sprintLeft++; sprintUI(); shorten(0.7); chime(true); showToast("Golden Dalahäst · +50 · +1 sprint"); }
+    else { chime(false); showToast("Kanelbulle · +2"); }
+  }
+  function animItems(dt) {
+    for (var i = 0; i < items.length; i++) { var it = items[i]; it.ph += dt * 2; it.mesh.rotation.y += dt * (it.type === "horse" ? 0.9 : 0.6); it.mesh.position.y = Math.sin(it.ph) * 0.03 + (it.type === "horse" ? 0.05 : 0); }
+    if (toastT > 0) { toastT -= dt; if (toastT <= 0) document.getElementById("toast").classList.remove("show"); }
+  }
+  function vanish() { ent.visible = false; ent.position.set(-999, 0, -999); tgt = null; dmapCx = -1; }
+  function shorten(f) { if (vis.phase === "calm") vis.next = vis.t + Math.max(3, (vis.next - vis.t) * f); }
+  function nextGap() {
+    var G = Math.max(18, 45 * Math.pow(0.92, level - 1)), g = lvlTotal > 0 ? lvlPts / lvlTotal : 0, tf = Math.min(0.4, lvlTime / 600);
+    var gap = G * (1 - 0.5 * g) * (1 - tf) * (0.7 + 0.6 * Math.random()), r = Math.random();
+    if (r < 0.15) gap *= 0.35; else if (r > 0.85) gap *= 1.9;
+    return Math.max(12, gap);
+  }
+  function cue() {
+    var r = Math.random();
+    if (r < 0.35) cueFlickT = 0.8 + Math.random() * 1.6;
+    else if (r < 0.6) { var n = 2 + Math.floor(Math.random() * 3); for (var i = 0; i < n; i++) vis.q.push({ t: vis.t + i * 0.7, f: function () { heartBeat(0.55); } }); }
+    else if (r < 0.85) { var m = 2 + Math.floor(Math.random() * 4), d0 = 12 + Math.random() * 10; for (var j = 0; j < m; j++) vis.q.push({ t: vis.t + j * (0.55 + Math.random() * 0.15), f: function () { footstep(0.5, d0); } }); }
+    else { try { ambient(); } catch (e) {} cueFlickT = 0.4; }
+  }
+  function spawnVisit(first) {
+    var pcx = Math.floor(px / CELL), pcz = Math.floor(pz / CELL), b = bfs(pcx, pcz), best = null, bs = -9, x, z, fx = -Math.sin(yaw), fz = -Math.cos(yaw), lo = first ? 4 : 6, hi = first ? 6 : 9;
+    for (z = 0; z < gh; z++) for (x = 0; x < gw; x++) {
+      var dd = b.d[z][x]; if (dd < lo || dd > hi || grid[z][x] !== 0) continue;
+      var wx = (x + 0.5) * CELL, wz = (z + 0.5) * CELL, dx = wx - px, dz = wz - pz, hl = Math.hypot(dx, dz) || 1, dot = (dx * fx + dz * fz) / hl;
+      var sc = (first ? dot : -dot * 0.5) + Math.random() * 0.7 - (canSee(wx, wz, 15) && !first ? 1.5 : 0);
+      if (sc > bs) { bs = sc; best = [wx, wz]; }
+    }
+    if (best) ent.position.set(best[0], 0, best[1]);
+    ent.visible = true; tgt = null; dmapCx = -1; entSt.t = 0; strain = Math.max(strain, 15);
+    try { heartBeat(1); } catch (e) {}
+  }
+  function endVisit(fake) {
+    vis.phase = "calm"; vis.t = 0; vis.next = nextGap() * (fake ? 0.7 : 1); vis.q = []; vis.first = false;
+    if (!fake) vanish();
+  }
+  function visStep(dt) {
+    vis.t += dt; lvlTime += dt;
+    for (var i = vis.q.length - 1; i >= 0; i--) if (vis.t >= vis.q[i].t) { var q = vis.q.splice(i, 1)[0]; try { q.f(); } catch (e) {} }
+    if (vis.phase === "calm") {
+      vis.cueT -= dt; if (vis.cueT <= 0) { vis.cueT = 9 + Math.random() * 22; if (Math.random() < 0.75) cue(); }
+      if (vis.t >= vis.next) {
+        vis.fake = !vis.first && Math.random() < 0.28; vis.phase = "warn"; vis.t = 0; vis.hb = 0; vis.q = [];
+        vis.warnLen = vis.first ? 3 : (Math.random() < 0.1 ? 0.3 : 2 + Math.random() * 3.5);
+      }
+    } else if (vis.phase === "warn") {
+      var k = vis.warnLen > 0.5 ? vis.t / vis.warnLen : 1;
+      vis.hb -= dt; if (vis.hb <= 0 && vis.warnLen > 0.5) { heartBeat(0.5 + 0.5 * k); vis.hb = 0.85 - 0.45 * k; }
+      if (vis.t >= vis.warnLen) {
+        if (vis.fake) endVisit(true);
+        else { var f = vis.first; spawnVisit(f); vis.phase = "visit"; vis.t = 0; vis.dur = Math.min(30, 14 + 3 * level) * (0.75 + Math.random() * 0.55); }
+      }
+    } else if (vis.t >= vis.dur && (!seen || vis.t > vis.dur + 14)) endVisit(false);
+  }
+
   function addStartPlatform() {
     var cyy = Math.floor(gh / 2), zc = (cyy + 0.5) * CELL, zA = (cyy - 2) * CELL, zB = (cyy + 3) * CELL, L = zB - zA, g = new THREE.Group(), z;
     var tx = 4.5;
@@ -1094,7 +1248,7 @@ Look at it to freeze it. Back away to win some distance.</p>
     lightSrc.push({ x: exitPos.x, y: 2.2, z: exitPos.z });
     }
 
-    addRailway(); addStairs(b0, exit); addStartPlatform();
+    addRailway(); addStairs(b0, exit); addStartPlatform(); if (!hunt) addItems(b0, exit); initMap();
 
     // Resident Evil style clutter: rusty drums, crates, bin bags, a caged work lamp in the corners.
     (function () {
@@ -1239,9 +1393,10 @@ Look at it to freeze it. Back away to win some distance.</p>
   var state = "ready";          // ready | play | dead | won
   var px = 0, pz = 0, yaw = -Math.PI / 2, pitch = 0;
   var sprintLeft = 1, sprintT = 0;
+  function sprintUI() { el.sprintBtn.textContent = sprintLeft > 0 ? "Sprint (" + sprintLeft + ")" : "Sprint used"; el.sprintBtn.disabled = sprintLeft < 1; }
   function trySprint() {
     if (state !== "play" || sprintLeft < 1 || sprintT > 0) return;
-    sprintLeft = 0; sprintT = 3; el.sprintBtn.disabled = true; el.sprintBtn.textContent = "Sprint used"; el.sprintBtn.classList.add("down");
+    sprintLeft--; sprintT = 3; sprintUI(); el.sprintBtn.classList.add("down"); shorten(0.8);
   }
   var glEl = document.getElementById("gl");
   var held = false, walkBtn = false, ignoreUntilRelease = false, keys = {};
@@ -1282,7 +1437,7 @@ Look at it to freeze it. Back away to win some distance.</p>
   }
   function startGame() {
     leaveCity();
-    if (state === "dead" || state === "end" || state === "intro" || state === "ready") { sprintLeft = 1; el.sprintBtn.disabled = false; el.sprintBtn.textContent = "Sprint (once)"; }
+    if (state === "dead" || state === "end" || state === "intro" || state === "ready") { sprintLeft = 1; score = 0; sprintUI(); }
     sprintT = 0; el.sprintBtn.classList.remove("down");
     if (state === "dead" || state === "end") { level = 1; gmode = "escape"; }
     else if (state === "won") { level++; }
@@ -1291,8 +1446,9 @@ Look at it to freeze it. Back away to win some distance.</p>
     pool.forEach(function (l) { l.visible = true; });
     el.blinkBtn.textContent = "Hold to blink"; el.choices.hidden = true;
     buildLevel(false); resetPlayer();
-    wake.t = (level === 1 && gmode === "escape") ? 0 : 99; wake.grace = wake.t === 0 ? 20 : 0; wake.hot = false;
-    if (wake.t === 0 && startBench) { px = startBench.x; pz = startBench.z; yaw = Math.PI / 2; pitch = -0.32; camY = -0.5; ent.position.set(spawn.x, 0, spawn.z); } else { camY = 0; }
+    wake.t = (level === 1 && gmode === "escape") ? 0 : 99; wake.grace = 0; wake.hot = false;
+    vis = { phase: "calm", t: 0, next: wake.t === 0 ? 20 : 12 + Math.random() * 10, dur: 0, fake: false, first: true, cueT: 10 + Math.random() * 8, hb: 0, warnLen: 0, q: [] }; lvlTime = 0; vanish(); updateHud();
+    if (wake.t === 0 && startBench) { px = startBench.x; pz = startBench.z; yaw = Math.PI / 2; pitch = -0.32; camY = -0.5; } else { camY = 0; }
     glEl.style.filter = "";
     state = "play"; held = false; ignoreUntilRelease = true;
     el.overlay.hidden = true;
@@ -1315,7 +1471,7 @@ Look at it to freeze it. Back away to win some distance.</p>
   }
   function updateHud() {
     el.level.textContent = gmode === "hunt" ? "Hunt · second deaths " + caught + "/" + (hunted.length || HUNT_N) : "Level " + level;
-    el.best.textContent = "Best " + best;
+    el.best.textContent = "Best " + best; el.score.textContent = "Points " + score;
   }
   var camYaw = 0, camRoll = 0;
   var scareD = 0, scareFx = 0, scareFz = 0, scareRoot = false, flashEl = null, shakeT = 0;
@@ -1405,7 +1561,7 @@ Look at it to freeze it. Back away to win some distance.</p>
     if (cleared > best) { best = cleared; try { localStorage.setItem("sista-best-3d", String(best)); } catch (e) {} }
     updateHud();
     el.oTitle.textContent = "It was right behind you.";
-    el.oBody.textContent = "Levels cleared: " + cleared + ". Best: " + best + ".";
+    el.oBody.textContent = "Levels cleared: " + cleared + ". Best: " + best + ".\nPoints: " + score + ".";
     el.oCta.textContent = "Press space or tap to try again";
   }
   function win() {
@@ -1419,7 +1575,7 @@ Look at it to freeze it. Back away to win some distance.</p>
       el.oBody.textContent = "Cold air. The stairs lead up to the street.\nBehind you, the station is still full of them.\nAn iron axe hangs by the stairs.";
       el.oCta.textContent = "";
     } else {
-      el.oBody.textContent = "Level " + level + " cleared.\nThe next station is bigger.";
+      el.oBody.textContent = "Level " + level + " cleared.\nPoints: " + score + ".\nThe next station is bigger.";
       el.oCta.textContent = "Press space or tap to continue";
     }
   }
@@ -1503,24 +1659,12 @@ Look at it to freeze it. Back away to win some distance.</p>
     lightT -= dt; if (lightT <= 0) { updateLights(); lightT = 0.12; }
     return false;
   }
-  function wakeEntity(stumbled) {
-    wake.grace = 0; wake.hot = true;
-    if (!stumbled) {
-      var cxp = Math.floor(px / CELL), czp = Math.floor(pz / CELL), b = bfs(cxp, czp), best = null, bs = -9, x, z, fx = -Math.sin(yaw), fz = -Math.cos(yaw);
-      for (z = 0; z < gh; z++) for (x = 0; x < gw; x++) {
-        var dd = b.d[z][x]; if (dd < 4 || dd > 6) continue;
-        var wx = (x + 0.5) * CELL - px, wz = (z + 0.5) * CELL - pz, hl = Math.hypot(wx, wz) || 1, sc = (wx * fx + wz * fz) / hl + Math.random() * 0.25;
-        if (sc > bs) { bs = sc; best = [x, z]; }
-      }
-      if (best) ent.position.set((best[0] + 0.5) * CELL, 0, (best[1] + 0.5) * CELL);
-    }
-    ent.visible = true; strain = 20;
-    try { heartBeat(1); } catch (e) {}
-  }
   function stepPlay(dt) {
     if (wake.t < 8) return stepWake(dt);
-    var grace = wake.grace > 0;
-    if (grace) { wake.grace -= dt; var dg = Math.hypot(ent.position.x - px, ent.position.z - pz); if (wake.grace <= 0) { wakeEntity(false); grace = false; } else if (dg < 11) { wakeEntity(true); grace = false; } }
+    visStep(dt);
+    var grace = vis.phase !== "visit";
+    for (var ii = items.length - 1; ii >= 0; ii--) if (Math.hypot(items[ii].x - px, items[ii].z - pz) < 0.9) collect(items[ii]);
+    if (grace) strain = Math.max(0, strain - 4 * dt);
     var closed = held || forced > 0;
     if (forced > 0) { forced -= dt; if (forced <= 0) strain = 30; }
     var rate = 9 + level * 1.2;
@@ -1616,7 +1760,7 @@ Look at it to freeze it. Back away to win some distance.</p>
     initAudio();
     gmode = "hunt";
     clearHunted();
-    buildLevel(true); resetPlayer();
+    buildLevel(true); resetPlayer(); vis.phase = "visit"; items = [];
     ent.visible = false;
     huntSpawns.forEach(function (s) { var h = makeHunted(s.x, s.z); h.g.rotation.y = Math.random() * 6.28; hunted.push(h); });
     strain = 0; forced = 0;
@@ -1951,7 +2095,8 @@ Look at it to freeze it. Back away to win some distance.</p>
     else if (state === "won" || state === "choice") { mode = "open"; label = "Exit reached"; }
     else if (state === "end") { mode = "open"; label = gmode === "hunt" ? "The station is empty" : "You got out"; }
     else if (wake.t < 8) { mode = "closed"; label = wake.t < 6 ? "Waking up on a bench · Space skips" : "Standing up"; }
-    else if (wake.grace > 0) { mode = "open"; label = "Quiet · explore · find the exit"; }
+    else if (gmode !== "hunt" && vis.phase === "calm") { mode = "open"; label = "Quiet · explore · collect · find the exit"; }
+    else if (gmode !== "hunt" && vis.phase === "warn") { mode = "closed"; label = "The lights are wrong · something is near"; }
     else if (gmode === "hunt") {
       if (held) { mode = "closed"; label = "Eyes closed · you creep · they hold still"; }
       else if (seen) { mode = "open"; label = "You see it · it runs"; }
@@ -1973,7 +2118,7 @@ Look at it to freeze it. Back away to win some distance.</p>
     el.gapFill.style.width = (playing ? Math.min(100, d / 30 * 100) : 100) + "%";
     el.sMeter.classList.toggle("hot", playing && strain > 75);
     el.gMeter.classList.toggle("hot", playing && d < 8);
-    var showDir = gmode === "hunt" ? (playing && huntNear) : (playing && !seen && d < 25 && wake.t >= 8 && wake.grace <= 0);
+    var showDir = gmode === "hunt" ? (playing && huntNear) : (playing && !seen && d < 25 && wake.t >= 8 && vis.phase === "visit");
     if (showDir && d < 30) {
       var edx = tx - px, edz = tz - pz;
       var rel = Math.atan2(edx * Math.cos(yaw) + edz * -Math.sin(yaw), edx * -Math.sin(yaw) + edz * -Math.cos(yaw));
@@ -2063,12 +2208,14 @@ Look at it to freeze it. Back away to win some distance.</p>
         el.choices.hidden = false; el.leaveBtn.focus();
       }
     }
+    if (cueFlickT > 0) { cueFlickT -= dt; if (flickSeq < 2) { flickSeq = 5; flickT = 0; } }
     flickT -= dt;
     if (flickT <= 0) {
       flickSeq = flickSeq > 0 ? flickSeq - 1 : (Math.random() < 0.92 ? 4 + Math.floor(Math.random() * 9) : 0);
       baseFlick = flickSeq > 0 ? (flickSeq % 2 ? (Math.random() < 0.3 ? 0.01 : 0.05 + Math.random() * 0.25) : 0.7 + Math.random() * 0.3) : 1;
       flickT = flickSeq > 0 ? 0.025 + Math.random() * 0.08 : 0.12 + Math.random() * 0.7;
     }
+    if (cueFlickT > 0 || vis.phase === "warn") baseFlick *= 0.4;
     tubeFlick = baseFlick * (0.78 + 0.22 * Math.sin(t * 61) * Math.sin(t * 19.3));
     if (!cityMode) ambLight.intensity = 0.4 * (0.6 + 0.4 * tubeFlick);
     tubeLitMat.color.setRGB(0.84 * tubeFlick, 0.93 * tubeFlick, tubeFlick); tubeGlowMat.opacity = 0.55 * tubeFlick;
@@ -2076,6 +2223,7 @@ Look at it to freeze it. Back away to win some distance.</p>
     if (entRig) animAura(entRig.aura, t, entRig.w);
     for (var hi = 0; hi < hunted.length; hi++) if (hunted[hi].rig) animAura(hunted[hi].rig.aura, t + hi * 3.7, 1);
     if (cityMode && state === "end") cityStep(dt);
+    animItems(dt); mapTick(dt);
     animAxe(dt); animHunted(dt); scareTick(dt); breathTick(dt); mistTick(t);
   }
   function draw() {
@@ -2114,7 +2262,7 @@ Look at it to freeze it. Back away to win some distance.</p>
   // Used by the recording harness: advance the game n fixed steps, then draw once.
   window.__game = { start: function () { startGame(); }, ent: ent, MODEL: MODEL,
     place: function (d, y) { yaw = y || 0; pitch = 0; var fx = -Math.sin(yaw), fz = -Math.cos(yaw); ent.visible = true; ent.position.set(px + fx * d, 0, pz + fz * d); ent.rotation.y = Math.atan2(-fx, -fz); },
-    rig: function () { return entRig; }, die: function () { die(); }, go: function (x, z, y, p) { px = x; pz = z; yaw = y; pitch = p || 0; updateLights(); }, info: function () { return { grid: grid.map(function (r) { return r.join(""); }), rail: railHall, stairs: stairInfo, CELL: CELL, start: startPos, exit: exitPos }; },  sfx: function () { footstep(1, 0); footstep(1.5, 8); heartBeat(0.8); return !!AC; } };
+    rig: function () { return entRig; }, items: function () { return items.map(function (i) { return [i.type, i.x, i.z]; }); }, vis: function () { return JSON.stringify([vis.phase, +vis.t.toFixed(1), +vis.next.toFixed(1), vis.fake]); }, score: function () { return [score, lvlPts, lvlTotal, sprintLeft]; }, die: function () { die(); }, go: function (x, z, y, p) { px = x; pz = z; yaw = y; pitch = p || 0; updateLights(); }, info: function () { return { grid: grid.map(function (r) { return r.join(""); }), rail: railHall, stairs: stairInfo, CELL: CELL, start: startPos, exit: exitPos }; },  sfx: function () { footstep(1, 0); footstep(1.5, 8); heartBeat(0.8); return !!AC; } };
   window.__step = function (n, dt) { for (var i = 0; i < n; i++) tick(dt || 0.05); draw(); return { state: state, gmode: gmode, level: level, caught: caught }; };
 
   var boot = function () {
