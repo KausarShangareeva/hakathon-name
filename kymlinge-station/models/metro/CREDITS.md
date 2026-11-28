@@ -1,8 +1,8 @@
 # Night metro intro: credits
 
-## People and the first-person arm
+## People
 
-`p_old_man.glb`, `p_hoodie.glb`, `p_leather.glb`, `p_headphones.glb`, `p_phone.glb` and `arm.glb` are converted from the
+`p_old_man.glb`, `p_hoodie.glb`, `p_leather.glb`, `p_headphones.glb` and `p_phone.glb` are converted from the
 [Microsoft Rocketbox Avatar Library](https://github.com/microsoft/Microsoft-Rocketbox) (MIT License, Copyright (c) 2020 Microsoft).
 The licence text is in `ROCKETBOX-LICENSE.md`.
 
@@ -13,7 +13,6 @@ The licence text is in `ROCKETBOX-LICENSE.md`.
 | p_leather.glb | Female_Adult_04 | f_sit_chair_idle_neutral_01 |
 | p_headphones.glb | Male_Adult_04 | m_headphones_idle |
 | p_phone.glb | Female_Adult_14 | f_cell_phone_textmessage |
-| arm.glb | Male_Adult_07, right arm only | none (posed in code) |
 
 Changes: converted from FBX to glTF, textures reduced to 1024 px (512 px for hair), animations trimmed to 12 s at 15 fps.
 
@@ -24,3 +23,11 @@ Changes: converted from FBX to glTF, textures reduced to 1024 px (512 px for hai
 by John Samuel, licensed under [CC BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0/).
 Changes: cropped, darkened to a deep-night grade and widened with matching sky.
 The adapted image is shared under the same licence, CC BY-SA 4.0.
+
+## Screams
+
+`audio/scream_f1.ogg`, `scream_f2.ogg`, `scream_f3.ogg` are cut from
+["Female high-pitched scream SFX"](https://opengameart.org/node/131040) by WuxiaScrub (CC0).
+`audio/scream_m1.ogg` to `scream_m4.ogg` come from
+["Male Grunt/Yelling sounds"](https://opengameart.org/content/male-gruntyelling-sounds) by HaelDB (CC0).
+Changes: trimmed, echo added, normalised, re-encoded as Ogg Vorbis.

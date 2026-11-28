@@ -2366,7 +2366,7 @@ Look at it to freeze it. Back away to win some distance.</p>
     pool.forEach(function (l) { l.visible = true; });
     el.blinkBtn.textContent = "Hold to blink"; el.choices.hidden = true;
     buildLevel(false); resetPlayer();
-    wake.t = (level === 1 && gmode === "escape") ? 0 : 99; wake.grace = 0; wake.hot = false;
+    wake.t = (level === 1 && gmode === "escape") ? 0 : 99; wake.grace = 0; wake.hot = false; wake.floor = false; wakeRoll = 0;
     vis = { phase: "calm", t: 0, next: wake.t === 0 ? 20 : 12 + Math.random() * 10, dur: 0, fake: false, first: true, cueT: 10 + Math.random() * 8, hb: 0, warnLen: 0, q: [] }; lvlTime = 0; vanish(); updateHud();
     if (wake.t === 0 && startBench) { px = startBench.x; pz = startBench.z; yaw = Math.PI / 2; pitch = -0.32; camY = -0.5; } else { camY = 0; }
     if (metro.active) { metro.active = false; metroAudioStop(); camera.far = 60; camera.updateProjectionMatrix(); }
@@ -2556,55 +2556,33 @@ Look at it to freeze it. Back away to win some distance.</p>
     if (!startBench || !startBench.group.visible) return;
     startBench.group.visible = false; var bi2 = blockers.indexOf(startBench.block); if (bi2 >= 0) blockers.splice(bi2, 1);
   }
-  /* ---------- Night metro intro: you wake up holding a pole on the last train, Stockholm outside ---------- */
-  // Timeline (seconds). Space skips. Car is static at the origin, the world slides past along -x.
-  var MT = { lids: 6, announce: 8.5, tunnel: 12, flicker: 15.2, vanish: 15.7, brake: 16.5, stop: 21, doors: 21.6, release: 22.6, turn: 23, walk: 24.2, close: 26.3, end: 26.9 };
-  var metro = { ready: false, active: false, t: 0, scene: null, parts: {} }, MV = 14;   // cruising speed, m/s
+  /* ---------- Night metro intro ----------
+     An ordinary night ride from Slussen towards T-Centralen. You step in, the doors close, Stockholm slides past;
+     you look right, then left, at the other passengers. Then a jolt: strange walls outside, the car starts to rock,
+     and every time you blink someone is gone, screaming. The train crashes, you are thrown out, everything goes
+     black, and you wake up on the floor of Kymlinge, the station nobody can travel to. Space skips. */
+  var MT = { walkIn: 0.6, inside: 2.8, doors: 3.3, depart: 4.5, lookR: 6.6, lookL: 9.2, front: 11.6, jolt: 12.6,
+             blinks: [14.0, 15.3, 16.4, 17.3, 18.0], crash: 19.0, black: 19.6, end: 21.4 };
+  var metro = { ready: false, active: false, t: 0, scene: null, parts: {} }, MV = 15;
   var MW = 2.7, MLEN = 16, MH = 2.2, MEYE = 1.66;
-  var mPlayer = new THREE.Vector3(-0.3, 0, 0.38);    // feet; the vestibule pole stands at the origin
-  var mAssets = { pass: {}, arm: null, sky: null }, mLoadLeft = 7;
+  var mPlayer = new THREE.Vector3(0.35, 0, 0.25), mBoard = new THREE.Vector3(0, 0, 3.4);
+  var mAssets = { pass: {}, sky: null }, mLoadLeft = 6, wakeRoll = 0;
   (function loadMetroAssets() {
     var L = new THREE.GLTFLoader(), done = function () { if (--mLoadLeft === 0) metro.ready = true; };
     ["p_old_man", "p_hoodie", "p_leather", "p_headphones", "p_phone"].forEach(function (n) {
       L.load("models/metro/" + n + ".glb", function (g) { mAssets.pass[n] = g; done(); }, undefined, function () { mLoadLeft = 1e9; });
     });
-    L.load("models/metro/arm.glb", function (g) { mAssets.arm = g; done(); }, undefined, function () { mLoadLeft = 1e9; });
     new THREE.TextureLoader().load("models/metro/stockholm_night.jpg", function (t) { t.encoding = THREE.sRGBEncoding; mAssets.sky = t; done(); }, undefined, function () { mLoadLeft = 1e9; });
   })();
 
-  function sMetro(t) {        // distance travelled by time t (constant speed, then a linear brake to the stop)
-    if (t <= MT.brake) return MV * t;
-    var bt = Math.min(t, MT.stop) - MT.brake, D = MT.stop - MT.brake;
-    return MV * MT.brake + MV * (bt - bt * bt / (2 * D));
+  function sMetro(t) {        // standing at the platform, 5 s of acceleration, then cruising
+    var d = t - MT.depart, A = 5;
+    if (d <= 0) return 0;
+    if (d <= A) return 0.5 * (MV / A) * d * d;
+    return 0.5 * MV * A + MV * (d - A);
   }
-  function vMetro(t) { return t <= MT.brake ? MV : t >= MT.stop ? 0 : MV * (1 - (t - MT.brake) / (MT.stop - MT.brake)); }
-
-  // grip a vertical pole: CCD IK for the elbow, hand set by basis, fingers curled round it
-  function mCCD(root, chain, eff, target, iters) {
-    var e = new THREE.Vector3(), j = new THREE.Vector3(), a = new THREE.Vector3(), b = new THREE.Vector3(), qq = new THREE.Quaternion(), pq = new THREE.Quaternion();
-    for (var it = 0; it < iters; it++) for (var i = 0; i < chain.length; i++) {
-      var bone = chain[i]; root.updateMatrixWorld(true);
-      eff.getWorldPosition(e); bone.getWorldPosition(j);
-      a.subVectors(e, j).normalize(); b.subVectors(target, j).normalize();
-      if (a.dot(b) > 0.99999) continue;
-      qq.setFromUnitVectors(a, b); bone.parent.getWorldQuaternion(pq);
-      bone.quaternion.premultiply(pq.clone().invert().multiply(qq).multiply(pq));
-    }
-  }
-  function gripPole(B, root, P0) {
-    root.updateMatrixWorld(true);
-    var sh = new THREE.Vector3(); B.Bip01_R_UpperArm.getWorldPosition(sh);
-    var up = new THREE.Vector3(0, 1, 0), F = new THREE.Vector3(P0.x - sh.x, 0, P0.z - sh.z).normalize();
-    var N = new THREE.Vector3().crossVectors(up, F).normalize();
-    var wrist = P0.clone().addScaledVector(F, -0.075).addScaledVector(N, -0.035);
-    mCCD(root, [B.Bip01_R_Forearm, B.Bip01_R_UpperArm], B.Bip01_R_Hand, wrist, 16);
-    var Z = new THREE.Vector3().crossVectors(F, N), m = new THREE.Matrix4().makeBasis(F, N, Z), qw = new THREE.Quaternion().setFromRotationMatrix(m);
-    var pq = new THREE.Quaternion(); B.Bip01_R_Hand.parent.getWorldQuaternion(pq);
-    B.Bip01_R_Hand.quaternion.copy(pq.invert().multiply(qw));
-    [1, 2, 3, 4].forEach(function (f) { [["", 0.75], ["1", 1.05], ["2", 0.85]].forEach(function (sg) { var bn = B["Bip01_R_Finger" + f + sg[0]]; if (bn) bn.rotation.z += 1.25 * sg[1]; }); });
-    if (B.Bip01_R_Finger01) B.Bip01_R_Finger01.rotation.z += 0.5;
-    root.updateMatrixWorld(true);
-  }
+  function vMetro(t) { var d = t - MT.depart; return d <= 0 ? 0 : Math.min(MV, MV * d / 5); }
+  function smooth01(x) { x = Math.max(0, Math.min(1, x)); return x * x * (3 - 2 * x); }
 
   function mTex(w, h, fn, rx, ry) { var t = canvasTex(w, h, fn); t.repeat.set(rx || 1, ry || 1); return t; }
   function buildMetro() {
@@ -2712,11 +2690,12 @@ Look at it to freeze it. Back away to win some distance.</p>
       P.mixers.push(mx); P.pass.push(root); return root;
     }
     var seatZ = MW / 2 - 0.3;
-    addP("p_old_man", -2.3, -seatZ, 0, 1);
+    // right of you: woman with the phone, woman in leather, the hoodie; left: headphones, the old man
+    var ph = addP("p_phone", 1.45, 0.05, -Math.PI / 2, 5);
+    addP("p_headphones", -1.35, -0.15, Math.PI / 2, 3);
     addP("p_leather", 2.7, -seatZ, 0, 4);
-    addP("p_hoodie", 2.9, seatZ, Math.PI, 2);
-    addP("p_headphones", -1.5, -0.2, Math.PI / 2, 3);
-    var ph = addP("p_phone", 1.15, 0.25, -Math.PI / 2, 5);
+    addP("p_old_man", -2.4, -seatZ, 0, 1);
+    addP("p_hoodie", 3.0, seatZ, Math.PI, 2);
     if (ph) {   // her phone, screen lit
       var hand = null; ph.traverse(function (o) { if (o.name === "Bip01_R_Hand") hand = o; });
       if (hand) {
@@ -2724,14 +2703,6 @@ Look at it to freeze it. Back away to win some distance.</p>
         phone.position.set(9, 2, 4); hand.add(phone);
       }
     }
-    // --- your right arm, holding the pole ---
-    if (mAssets.arm) {
-      var arm = mAssets.arm.scene, B = {};
-      arm.traverse(function (o) { if (o.isBone) B[o.name] = o; if (o.isMesh) o.frustumCulled = false; });
-      gripPole(B, arm, new THREE.Vector3(-0.3, 1.5, 0.38));   // in the arm's own space: 0.3 m right, 0.38 m ahead of the feet
-      arm.position.copy(mPlayer); arm.rotation.y = Math.PI; car.add(arm); P.arm = arm;
-    }
-
     // --- outside: Stockholm across Riddarfjärden, bridge railing, masts, water ---
     var out = new THREE.Group(); S.add(out); P.bridge = out;
     // photo widened with its own sky; the city part is ~90 m wide at 75 m, skyline just below eye level
@@ -2751,7 +2722,7 @@ Look at it to freeze it. Back away to win some distance.</p>
     for (var j2 = 0; j2 < 4; j2++) { var arm2 = box(0.08, 0.08, 5.2, postMat, 0, 3.9, 0, out); arm2.userData.x0 = j2 * 25 - 50; P.masts.push(arm2); }
     // tunnel
     var tunT = mTex(512, 256, function (c, w, h) {
-      c.fillStyle = "#15171a"; c.fillRect(0, 0, w, h);
+      c.fillStyle = "#1a0f0e"; c.fillRect(0, 0, w, h);
       for (var i = 0; i < 1800; i++) { var v = 10 + Math.random() * 30 | 0; c.fillStyle = "rgba(" + v + "," + v + "," + v + ",0.6)"; c.fillRect(Math.random() * w, Math.random() * h, 3, 3); }
       c.strokeStyle = "#090a0b"; c.lineWidth = 6; [0.3, 0.36, 0.42].forEach(function (y) { c.beginPath(); c.moveTo(0, h * y); c.lineTo(w, h * y + 6); c.stroke(); });
       c.fillStyle = "#0b0c0d"; for (var x = 0; x < w; x += 128) c.fillRect(x, 0, 10, h);
@@ -2759,15 +2730,23 @@ Look at it to freeze it. Back away to win some distance.</p>
     var tun = new THREE.Group(); S.add(tun); tun.visible = false; P.tunnel = tun; P.tunT = tunT;
     [-1, 1].forEach(function (sd) { var tw = new THREE.Mesh(new THREE.PlaneGeometry(400, 5), new THREE.MeshStandardMaterial({ map: tunT, roughness: 0.9 })); tw.position.set(0, 1.5, sd * 2.2); tw.rotation.y = sd > 0 ? Math.PI : 0; tun.add(tw); if (sd > 0) P.tunPlus = tw; });
     var tc = new THREE.Mesh(new THREE.PlaneGeometry(400, 5), new THREE.MeshStandardMaterial({ map: tunT, roughness: 0.9 })); tc.rotation.x = Math.PI / 2; tc.position.y = 3.6; tun.add(tc);
-    P.tlamps = []; var tlMat = new THREE.MeshBasicMaterial({ color: 0xffd9a0 });
-    for (var k = 0; k < 6; k++) { var tl = box(0.5, 0.08, 0.05, tlMat, 0, 2.6, -2.15, tun); tl.userData.x0 = k * 20 - 60; P.tlamps.push(tl); }
-    // Kymlinge platform, waiting on the +z side
-    var plat = new THREE.Group(); plat.visible = false; S.add(plat); P.plat = plat;
+    P.tlamps = []; var tlMat = new THREE.MeshBasicMaterial({ color: 0xff2a14 });
+    for (var k = 0; k < 10; k++) [-1, 1].forEach(function (sd) { var tl = box(0.6, 0.1, 0.05, tlMat, 0, 2.5, sd * 2.15, tun); tl.userData.x0 = k * 12 - 60 + (sd > 0 ? 6 : 0); P.tlamps.push(tl); });
+    P.tgraf = [];
+    ["get-out", "it-sees-you", "don-t-blink", "nobody-leaves", "titta-bakom-dig", "it-knows-your-name", "han-ar-kvar", "look-behind-you"].forEach(function (nm, k) {
+      [-1, 1].forEach(function (sd) {
+        var gm = new THREE.Mesh(new THREE.PlaneGeometry(3.2, 1.2), graffitiMat(nm, k % 3 ? "blood" : "black"));
+        gm.position.set(0, 1.25 + (k % 2) * 0.35, sd * 2.17); gm.rotation.y = sd > 0 ? Math.PI : 0; tun.add(gm);
+        gm.userData.x0 = k * 9 + (sd > 0 ? 4.5 : 0) - 36; P.tgraf.push(gm);
+      });
+    });
+    // the platform you board from (Slussen), on the +z side
+    var plat = new THREE.Group(); S.add(plat); P.plat = plat;
     var tileT = mTex(256, 256, function (c, w, h) { c.fillStyle = "#c9b23c"; c.fillRect(0, 0, w, h); c.strokeStyle = "#7d6d22"; c.lineWidth = 3; for (var i = 0; i <= w; i += 32) { c.beginPath(); c.moveTo(i, 0); c.lineTo(i, h); c.stroke(); c.beginPath(); c.moveTo(0, i); c.lineTo(w, i); c.stroke(); } for (var k = 0; k < 40; k++) { c.fillStyle = "rgba(40,30,10,0.25)"; c.fillRect(Math.random() * w, Math.random() * h, 20, 3); } }, 20, 2);
     var pf = new THREE.Mesh(new THREE.PlaneGeometry(60, 5), new THREE.MeshStandardMaterial({ color: 0x45484a, roughness: 0.6 })); pf.rotation.x = -Math.PI / 2; pf.position.set(0, 0.0, 4.0); plat.add(pf);
     var edge = box(60, 0.02, 0.25, new THREE.MeshStandardMaterial({ color: 0xe3c21e }), 0, 0.01, 1.75, plat);
     var bw = new THREE.Mesh(new THREE.PlaneGeometry(60, 4), new THREE.MeshStandardMaterial({ map: tileT, roughness: 0.5 })); bw.position.set(0, 2, 6.5); bw.rotation.y = Math.PI; plat.add(bw);
-    var signT = canvasTex(512, 128, function (c, w, h) { c.fillStyle = "#14327a"; c.fillRect(0, 0, w, h); c.strokeStyle = "#f2f2f2"; c.lineWidth = 6; c.strokeRect(8, 8, w - 16, h - 16); c.fillStyle = "#f2f2f2"; c.font = "bold 64px Arial"; c.textAlign = "center"; c.fillText("KYMLINGE", w / 2, 88); });
+    var signT = canvasTex(512, 128, function (c, w, h) { c.fillStyle = "#14327a"; c.fillRect(0, 0, w, h); c.strokeStyle = "#f2f2f2"; c.lineWidth = 6; c.strokeRect(8, 8, w - 16, h - 16); c.fillStyle = "#f2f2f2"; c.font = "bold 64px Arial"; c.textAlign = "center"; c.fillText("SLUSSEN", w / 2, 88); });
     [-12, 0, 12].forEach(function (x) { var sg = new THREE.Mesh(new THREE.PlaneGeometry(2.4, 0.6), new THREE.MeshStandardMaterial({ map: signT, roughness: 0.5, emissive: 0x223355, emissiveIntensity: 0.3 })); sg.position.set(x, 2.3, 6.45); sg.rotation.y = Math.PI; plat.add(sg); });
     P.platLights = [-14, 0, 14].map(function (x) { var l = new THREE.PointLight(0xbfe0ff, 0.9, 14, 1.6); l.position.set(x, 3.2, 4); plat.add(l); return l; });
   }
@@ -2805,28 +2784,6 @@ Look at it to freeze it. Back away to win some distance.</p>
       g.gain.setValueAtTime(0, t0); g.gain.linearRampToValueAtTime(vol, t0 + 0.02); g.gain.exponentialRampToValueAtTime(0.0008, t0 + len); o.connect(g); g.connect(master); o.start(t0); o.stop(t0 + len + 0.05); }); } catch (e) {}
   }
 
-  function startMetro() {
-    if (!metro.scene) buildMetro();
-    var P = metro.parts;
-    metro.active = true; metro.t = 0; metro.evt = {}; metro.clackS = 0;
-    P.pass.forEach(function (p) { p.visible = true; });
-    P.doors.forEach(function (d) { d.m.position.x = d.x0; });
-    if (P.arm) P.arm.visible = true;
-    P.bridge.visible = true; P.tunnel.visible = false; P.plat.visible = false; P.tunPlus.position.x = 0;
-    yaw = -0.22; pitch = -0.1; camera.far = 220; camera.updateProjectionMatrix();
-    metroAudioStart();
-  }
-  function endMetro() {
-    metro.active = false; metroAudioStop();
-    camera.far = 60; camera.updateProjectionMatrix();
-    removeBench();
-    if (startBench) { px = startBench.x - 0.7; pz = startBench.z; }     // just off the train, back to the track
-    yaw = -Math.PI / 2; pitch = 0; camY = 0;
-    wake.t = 8; lid = 0; glEl.style.filter = ""; ignoreUntilRelease = true;
-    setFade(1, "#000"); fadeTarget = 0; fadeSpeed = 1.4;
-  }
-  function skipMetro() { if (metro.t < MT.close - 0.4) { metro.t = MT.close - 0.4; metro.evt.skip = true; } }
-
   function ledDraw(txt, t) {
     var c = metro.parts.ledC.getContext("2d"), w = 512, h = 64;
     c.fillStyle = "#080402"; c.fillRect(0, 0, w, h);
@@ -2837,74 +2794,163 @@ Look at it to freeze it. Back away to win some distance.</p>
     metro.parts.ledT.needsUpdate = true;
   }
 
+  var mScreams = [], mScreamOrder = ["scream_f1", "scream_m1", "scream_f2", "scream_m2", "scream_m4", "scream_f3", "scream_m3"];
+  function loadScreams() {
+    if (!AC || mScreams.length) return;
+    mScreamOrder.forEach(function (n, i) {
+      fetch("audio/" + n + ".ogg").then(function (r) { if (!r.ok) throw new Error(n); return r.arrayBuffer(); })
+        .then(function (d) { return AC.decodeAudioData(d); }).then(function (buf) { mScreams[i] = buf; }).catch(function () {});
+    });
+  }
+  function scream(i, vol, rate) {
+    var buf = mScreams[i % mScreamOrder.length]; if (!AC || !buf) return;
+    try { var s = AC.createBufferSource(); s.buffer = buf; s.playbackRate.value = rate || 1; var g = AC.createGain(); g.gain.value = vol || 0.8;
+      s.connect(g); g.connect(master); s.start(); } catch (e) {}
+  }
+  function mBoom(k) {          // deep impact
+    if (!AC || !noiseBuf) return;
+    try { var t0 = AC.currentTime, o = AC.createOscillator(), og = AC.createGain(); o.type = "sine"; o.frequency.setValueAtTime(70, t0); o.frequency.exponentialRampToValueAtTime(28, t0 + 0.9);
+      og.gain.setValueAtTime(0.0001, t0); og.gain.linearRampToValueAtTime(0.7 * k, t0 + 0.02); og.gain.exponentialRampToValueAtTime(0.0005, t0 + 1.4); o.connect(og); og.connect(master); o.start(t0); o.stop(t0 + 1.5);
+      var s = AC.createBufferSource(); s.buffer = noiseBuf; var f = AC.createBiquadFilter(); f.type = "lowpass"; f.frequency.value = 900; var g = AC.createGain();
+      g.gain.setValueAtTime(0.0001, t0); g.gain.linearRampToValueAtTime(0.6 * k, t0 + 0.01); g.gain.exponentialRampToValueAtTime(0.0005, t0 + 0.8);
+      s.connect(f); f.connect(g); g.connect(master); s.start(t0); s.stop(t0 + 0.9); } catch (e) {}
+  }
+  function mScreech(dur, k) {  // steel wheels grinding
+    if (!AC) return;
+    try { var t0 = AC.currentTime; [1180, 1470, 2210].forEach(function (fq, i) {
+      var o = AC.createOscillator(), bp = AC.createBiquadFilter(), g = AC.createGain(); o.type = "sawtooth"; o.frequency.setValueAtTime(fq, t0); o.frequency.linearRampToValueAtTime(fq * (0.82 + 0.1 * i), t0 + dur);
+      bp.type = "bandpass"; bp.frequency.value = fq; bp.Q.value = 9; g.gain.setValueAtTime(0.0001, t0); g.gain.linearRampToValueAtTime(0.05 * k, t0 + 0.08); g.gain.setValueAtTime(0.05 * k, t0 + dur * 0.7); g.gain.exponentialRampToValueAtTime(0.0005, t0 + dur);
+      o.connect(bp); bp.connect(g); g.connect(master); o.start(t0); o.stop(t0 + dur + 0.05); }); } catch (e) {}
+  }
+
+  function startMetro() {
+    if (!metro.scene) buildMetro();
+    var P = metro.parts;
+    metro.active = true; metro.t = 0; metro.evt = {}; metro.shake = 0;
+    P.pass.forEach(function (p) { p.visible = true; });
+    P.doors.forEach(function (d) { d.m.position.x = d.x0 + d.dir * 0.64; });     // standing open at the platform
+    P.bridge.visible = true; P.tunnel.visible = false; P.plat.visible = true; P.tunPlus.position.x = 0;
+    yaw = 0; pitch = -0.04; wakeRoll = 0; camera.far = 220; camera.updateProjectionMatrix();
+    lid = 0; glEl.style.filter = "";
+    metroAudioStart(); loadScreams();
+  }
+  function endMetro() {
+    metro.active = false; metroAudioStop();
+    camera.far = 60; camera.updateProjectionMatrix();
+    removeBench();
+    // you come to on the platform floor by the track, eyes opening; then you stand up
+    if (startBench) { px = startBench.x - 0.8; pz = startBench.z; }
+    yaw = Math.PI / 2; pitch = 0.05; camY = -1.25;
+    wake.t = 0; wake.floor = true; lid = 1; ignoreUntilRelease = true;
+    setFade(1, "#000"); fadeTarget = 0; fadeSpeed = 0.9;
+  }
+  function skipMetro() { if (metro.t < MT.black) metro.t = MT.black; }
+
   function stepMetro(dt) {
     var P = metro.parts, t0 = metro.t; metro.t += dt; var t = metro.t, E = metro.evt;
     function once(k, at) { if (!E[k] && t >= at) { E[k] = true; return true; } return false; }
     held = false;
-    // eyes open (the blink you had on the bench), blur clearing
-    lid = t < MT.lids ? lidAt(t) : (t > MT.close ? Math.min(1, (t - MT.close) / 0.5) : 0);
-    glEl.style.filter = t < 6.5 ? "blur(" + (Math.max(0, 1 - t / 5.5) * 8).toFixed(1) + "px)" : "";
-    // head look stays near where the body faces until you turn to the doors
-    if (t < MT.turn) { yaw = Math.max(-1.9, Math.min(1.9, yaw)); }
-    else { var k = Math.min(1, (t - MT.turn) / 1.1), e = k * k * (3 - 2 * k); yaw += ((Math.PI + 0.05) - yaw) * e * 0.25; pitch += (-0.05 - pitch) * 0.1; }
+    // the head: you look where you like until it turns by itself to the right, then the left, then ahead
+    var auto = null;
+    if (t < MT.inside) auto = 0;
+    else if (t >= MT.lookR && t < MT.lookL) auto = -1.25;
+    else if (t >= MT.lookL && t < MT.front) auto = 1.3;
+    else if (t >= MT.front && t < MT.jolt) auto = 0;
+    var autoPitch = -0.04;
+    if (t >= MT.jolt && t < MT.crash) {        // eyes go to the one who is about to vanish
+      for (var bk = 0; bk < MT.blinks.length; bk++) if (t < MT.blinks[bk] + 0.5 && P.pass[bk]) {
+        var pp = P.pass[bk].position; auto = Math.atan2(-(pp.x - mPlayer.x), -(pp.z - mPlayer.z)); autoPitch = Math.abs(pp.z) > 0.6 ? -0.2 : -0.08; break;
+      }
+    }
+    if (auto !== null) { yaw += (auto - yaw) * Math.min(1, dt * 2.6); pitch += (autoPitch - pitch) * Math.min(1, dt * 2); }
+    else yaw = Math.max(-2.2, Math.min(2.2, yaw));
     for (var i = 0; i < P.mixers.length; i++) P.mixers[i].update(dt);
-    // the world slides by
+    // the platform falls behind, then Stockholm, then the walls that should not be there
     var s = sMetro(t), v = vMetro(t);
     var wrap = function (x0, span) { var x = ((x0 - s) % span + span) % span; return x - span / 2; };
     P.posts.forEach(function (p) { p.position.x = wrap(p.userData.x0, 60); });
     P.masts.forEach(function (m) { m.position.x = wrap(m.userData.x0, 100); });
     P.sky.position.x = 10 - s * 0.04; P.far.position.x = -10 + s * 0.05;
-    if (once("tunnel", MT.tunnel)) { P.bridge.visible = false; P.tunnel.visible = true; P.tunPlus.position.x = 0; mHiss(1.2, 1.2); }
-    if (P.tunnel.visible) { P.tunT.offset.x = s / 400 * 30 % 1; P.tlamps.forEach(function (l) { l.position.x = wrap(l.userData.x0, 120); }); }
-    if (t >= MT.tunnel - 1) { P.plat.visible = true; P.plat.position.x = sMetro(MT.stop) - s + 0.2; P.tunPlus.position.x = P.plat.position.x - 30 - 200; }   // the wall ends where the platform starts
-    // lights: steady, a dip in the tunnel, a hard flicker; passengers are gone when it ends
-    var base = t < MT.tunnel ? 1 : 0.85, fl = 1;
-    if (t > MT.flicker && t < MT.vanish + 0.9) fl = Math.random() < 0.45 ? 0.05 : 0.8;
-    if (once("vanish", MT.vanish)) { P.pass.forEach(function (p) { p.visible = false; }); mThump(1.4); }
-    P.lamps.forEach(function (l) { l.intensity = 0.62 * base * fl; }); P.stripMat.emissiveIntensity = 0.7 * base * fl; P.amb.intensity = 0.16 * (0.4 + 0.6 * fl);
-    // LED: "Nästa: Kymlinge"
-    ledDraw(t < MT.stop ? "Nästa station: Kymlinge   ·   Next station: Kymlinge   ·   " : "Kymlinge   ·   Dörrarna öppnas   ·   ", t);
-    if (once("ann", MT.announce)) { mTones([784, 659], 0.45, 0.9, 0.08); showToast("Nästa station: Kymlinge"); }
-    // doors
-    if (once("doors", MT.doors)) { mTones([880, 740, 880], 0.18, 0.4, 0.06); mHiss(0.9, 1); }
-    var dk = Math.max(0, Math.min(1, (t - MT.doors - 0.25) / 0.9)), de = dk * dk * (3 - 2 * dk);
-    P.doors.forEach(function (d) { d.m.position.x = d.x0 + d.dir * 0.64 * de; });
-    if (P.arm && once("release", MT.release)) P.arm.visible = false;
-    // sound: rumble scales with speed, rail joints every 18 m (two bogies)
+    P.plat.position.x = -s; if (s > 70) P.plat.visible = false;
+    if (once("doorsClose", MT.doors)) { mTones([880, 740, 587], 0.22, 0.45, 0.06); mHiss(0.9, 1); }
+    var dk = smooth01((t - MT.doors - 0.3) / 0.9);
+    P.doors.forEach(function (d) { d.m.position.x = d.x0 + d.dir * 0.64 * (1 - dk); });
+    if (once("ann", MT.depart + 1)) mTones([784, 659], 0.45, 0.9, 0.06);
+    if (once("jolt", MT.jolt)) {
+      P.bridge.visible = false; P.tunnel.visible = true; P.tunPlus.position.x = 0;
+      mBoom(0.9); mScreech(2.2, 1); metro.shake = 1;
+    }
+    if (P.tunnel.visible) {
+      P.tunT.offset.x = s / 400 * 30 % 1;
+      P.tlamps.forEach(function (l) { l.position.x = wrap(l.userData.x0, 120); });
+      P.tgraf.forEach(function (g) { g.position.x = wrap(g.userData.x0, 72); });
+    }
+    // after the jolt the car rocks harder and harder; it lurches again at every blink
+    var rock = t < MT.jolt ? 0 : Math.min(1, 0.35 + (t - MT.jolt) / 6);
+    metro.rock = rock; metro.shake = Math.max(0, metro.shake - dt * 1.6);
+    // lights: steady, then stuttering
+    var fl = 1;
+    if (t > MT.jolt && t < MT.crash) fl = Math.random() < 0.12 + 0.2 * rock ? 0.15 : 0.75 + 0.25 * Math.random();
+    P.lamps.forEach(function (l) { l.intensity = 0.62 * fl; }); P.stripMat.emissiveIntensity = 0.7 * fl; P.amb.intensity = 0.16 * (0.4 + 0.6 * fl);
+    // blinking: lids close, someone is gone when they open, and you hear them scream
+    lid = 0;
+    MT.blinks.forEach(function (bt, k) {
+      var d = t - bt;
+      if (d > -0.12 && d < 0.42) lid = Math.max(lid, d < 0 ? 1 + d / 0.12 : d < 0.2 ? 1 : 1 - (d - 0.2) / 0.22);
+      if (once("blink" + k, bt)) {
+        if (P.pass[k]) P.pass[k].visible = false;
+        scream(k, 0.85, 0.95 + Math.random() * 0.1); if (k >= 2) scream(k + 3, 0.5, 1.05);
+        metro.shake = Math.max(metro.shake, 0.6); mThump(1.3);
+      }
+    });
+    // LED: an ordinary line at first, then it goes wrong
+    var led = t < MT.jolt ? (t < MT.depart ? "Slussen   ·   Mot T-Centralen   ·   " : "Nästa station: Gamla stan   ·   Mot T-Centralen   ·   ")
+            : (Math.random() < 0.5 ? "K Y M L I N G E   ·   K Y M L I N G E   ·   " : "Näs#a st@tion: ?????   ·   ");
+    ledDraw(led, t);
+    // the crash: impact, glass, you are thrown, white, then black
+    if (once("crash", MT.crash)) {
+      mBoom(1.4); mScreech(1.2, 1.4); mHiss(1.6, 2.2); scream(5, 0.9, 1); scream(6, 0.7, 0.9);
+      metro.shake = 2; setFade(0.95, "#ffffff"); fadeTarget = 0.4; fadeSpeed = 2.5;
+    }
+    if (once("black", MT.black)) { setFade(0.4, "#000"); fadeTarget = 1; fadeSpeed = 2.2; metroAudioStop(); }
+    // sound: rumble with speed, rail joints, louder and rougher in the strange tunnel
     if (mSnd) {
-      var vk = v / MV, tun = P.tunnel.visible ? 1.5 : 1;
-      mSnd.g.gain.value = (0.05 + 0.32 * vk) * tun; mSnd.lp.frequency.value = 220 + 520 * vk;
-      mSnd.hg.gain.value = 0.02 + 0.05 * vk; mSnd.hum.frequency.value = 60 + 70 * vk;
+      var vk = v / MV, tun = P.tunnel.visible ? 1.6 : 1;
+      mSnd.g.gain.value = (0.03 + 0.3 * vk) * tun; mSnd.lp.frequency.value = 220 + 520 * vk + 300 * rock;
+      mSnd.hg.gain.value = 0.015 + 0.05 * vk; mSnd.hum.frequency.value = 60 + 70 * vk;
       var js = Math.floor(s / 18), jp = Math.floor(sMetro(t0) / 18);
       if (js !== jp && v > 0.5) { mThump(0.6 + 0.6 * vk); setTimeout(function () { mThump(0.5 + 0.5 * vk); }, 110 + 900 / Math.max(2, v)); }
     }
-    if (t > MT.brake && t < MT.stop && once("brake", MT.brake + 0.2)) mHiss(4.2, 0.6);
-    // walk out of the car onto the platform
-    if (t >= MT.walk && t0 < MT.close) {
-      var wk = Math.min(1, (t - MT.walk) / (MT.close - MT.walk));
-      if (Math.floor(wk * 5) !== Math.floor(Math.max(0, (t0 - MT.walk) / (MT.close - MT.walk)) * 5)) footstep(1, 0);
+    // walking in from the platform
+    if (t >= MT.walkIn && t0 < MT.inside) {
+      var wk = (t - MT.walkIn) / (MT.inside - MT.walkIn), wk0 = (t0 - MT.walkIn) / (MT.inside - MT.walkIn);
+      if (Math.floor(wk * 4) !== Math.floor(wk0 * 4) && wk <= 1) footstep(1, 0);
     }
     if (t >= MT.end) endMetro();
     return false;
   }
 
   function metroRender() {
-    var P = metro.parts, t = metro.t;
-    var v = vMetro(t), sw = v / MV;
-    // car sway and judder
-    P.car.rotation.x = Math.sin(t * 1.7) * 0.006 * sw + Math.sin(t * 13) * 0.0015 * sw;
-    P.car.position.y = Math.sin(t * 9.3) * 0.004 * sw;
-    var brake = t > MT.brake && t < MT.stop ? 1 : 0;
+    var P = metro.parts, t = metro.t, v = vMetro(t), sw = v / MV, rk = metro.rock || 0, sh = metro.shake || 0;
+    // the car: gentle sway at speed; after the jolt a heavy rock from side to side
+    P.car.rotation.x = Math.sin(t * 1.7) * 0.006 * sw + Math.sin(t * 13) * 0.0015 * sw + Math.sin(t * 2.6) * 0.05 * rk;
+    P.car.rotation.y = Math.sin(t * 1.9) * 0.012 * rk;
+    P.car.position.y = Math.sin(t * 9.3) * 0.004 * sw + Math.abs(Math.sin(t * 5.1)) * 0.03 * rk;
     var eye = new THREE.Vector3(mPlayer.x, MEYE, mPlayer.z);
-    if (t >= MT.walk) {     // step through the open doors
-      var wk = Math.min(1, (t - MT.walk) / (MT.close - MT.walk)), e = wk * wk * (3 - 2 * wk);
-      eye.x = mPlayer.x + (0.0 - mPlayer.x) * e; eye.z = mPlayer.z + (2.7 - mPlayer.z) * e;
-      eye.y += Math.sin(wk * Math.PI * 5) * 0.03;
+    if (t < MT.inside) {     // step off the platform into the car
+      var e = smooth01((t - MT.walkIn) / (MT.inside - MT.walkIn));
+      eye.set(mBoard.x + (mPlayer.x - mBoard.x) * e, MEYE + Math.sin(e * Math.PI * 4) * 0.025, mBoard.z + (mPlayer.z - mBoard.z) * e);
     }
     P.car.localToWorld(eye);
     camera.position.copy(eye);
-    camera.position.x += Math.sin(t * 2.1) * 0.01 * sw - brake * 0.04;
-    camera.rotation.set(pitch + Math.sin(t * 1.3) * 0.004 * sw, yaw, Math.sin(t * 1.1) * 0.01 * sw + P.car.rotation.x);
+    var rx = 0, ry = 0, rz = 0;
+    if (sh > 0) { camera.position.x += (Math.random() - 0.5) * 0.06 * sh; camera.position.y += (Math.random() - 0.5) * 0.05 * sh; rx = (Math.random() - 0.5) * 0.04 * sh; ry = (Math.random() - 0.5) * 0.05 * sh; rz = (Math.random() - 0.5) * 0.06 * sh; }
+    if (t > MT.crash) {      // thrown forward and over
+      var c = Math.min(1, (t - MT.crash) / 0.6);
+      camera.position.x += c * c * 2.2; camera.position.y += Math.sin(c * Math.PI) * 0.6 - c * 1.0; camera.position.z -= c * 0.8;
+      rx += -c * 1.4; rz += c * 2.4;
+    }
+    camera.rotation.set(pitch + rx + Math.sin(t * 1.3) * 0.004 * sw, yaw + ry, rz + Math.sin(t * 1.1) * 0.01 * sw + P.car.rotation.x);
     camera.updateMatrixWorld(true);          // the camera lives in the level scene; refresh it by hand
     renderer.render(metro.scene, camera);
   }
@@ -2915,14 +2961,16 @@ Look at it to freeze it. Back away to win some distance.</p>
     var t = wake.t;
     lid = lidAt(t); held = false;
     glEl.style.filter = t < 7 ? "blur(" + (Math.max(0, 1 - t / 5.5) * 9).toFixed(1) + "px)" : "";
-    if (t < 6) { camY = -0.5 + Math.sin(t * 1.3) * 0.012; pitch += (0.02 - pitch) * Math.min(1, dt * 0.7); yaw += Math.sin(t * 0.9) * 0.0006; }
+    var base = wake.floor ? -1.25 : -0.5;     // after the crash you lie on the platform floor, head on its side
+    if (t < 6) { camY = base + Math.sin(t * 1.3) * 0.012; pitch += (0.02 - pitch) * Math.min(1, dt * 0.7); yaw += Math.sin(t * 0.9) * 0.0006; wakeRoll = wake.floor ? 0.85 : 0; }
     else {
       var k = Math.min(1, (t - 6) / 2), e = k * k * (3 - 2 * k);
-      camY = -0.5 * (1 - e); px = startBench.x + 1.05 * e;
+      camY = base * (1 - e); wakeRoll = wake.floor ? 0.85 * (1 - e) : 0;
+      if (!wake.floor) px = startBench.x + 1.05 * e;
       removeBench();
       if (t - dt < 6.1 && t >= 6.1) footstep(1, 0);
     }
-    if (t >= 8) { wake.t = 8; camY = 0; glEl.style.filter = ""; lid = 0; ignoreUntilRelease = true; }
+    if (t >= 8) { wake.t = 8; camY = 0; wakeRoll = 0; wake.floor = false; glEl.style.filter = ""; lid = 0; ignoreUntilRelease = true; }
     audioStep(dt, 40, false);
     lightT -= dt; if (lightT <= 0) { updateLights(); lightT = 0.12; }
     return false;
@@ -3430,7 +3478,7 @@ Look at it to freeze it. Back away to win some distance.</p>
     else if (state === "dead") { mode = "forced"; label = "It reached you"; }
     else if (state === "won" || state === "choice" || state === "exiting") { mode = "open"; label = "Out"; }
     else if (state === "end") { mode = "open"; label = gmode === "hunt" ? "The station is empty" : "You got out"; }
-    else if (wake.t < 8) { mode = "closed"; label = metro.active ? "Night train to Kymlinge · Space skips" : wake.t < 6 ? "Waking up on a bench · Space skips" : "Standing up"; }
+    else if (wake.t < 8) { mode = "closed"; label = metro.active ? "Night train · Space skips" : wake.t < 6 ? (wake.floor ? "Coming to · Space skips" : "Waking up on a bench · Space skips") : "Standing up"; }
     else if (gmode !== "hunt" && vis.phase === "calm") { mode = "open"; label = "Quiet · explore · collect · find the exit"; }
     else if (gmode !== "hunt" && vis.phase === "warn") { mode = "closed"; label = "The lights are wrong · something is near"; }
     else if (gmode === "hunt") {
@@ -3583,7 +3631,7 @@ Look at it to freeze it. Back away to win some distance.</p>
       if (dn < 7) { var fr = (1 - dn / 7) * 0.006; rx += (Math.random() - 0.5) * fr; ry += (Math.random() - 0.5) * fr; rz += (Math.random() - 0.5) * fr * 1.5; }
     }
     camera.position.set(px + cx, EYE + cy + camY, pz + cz);
-    camera.rotation.set(pitch + rx, yaw + ry, rz);
+    camera.rotation.set(pitch + rx, yaw + ry, rz + wakeRoll);
     if (shakeJ > 0) { camera.position.x += (Math.random() - 0.5) * 0.09 * shakeJ; camera.position.y += (Math.random() - 0.5) * 0.07 * shakeJ; camera.rotation.z += (Math.random() - 0.5) * 0.05 * shakeJ; }
     if (state === "dead") {
       // Being eaten: the camera is thrown around, harder at first, easing off as the dark closes in.
