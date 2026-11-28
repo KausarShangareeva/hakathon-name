@@ -1111,12 +1111,90 @@ Look at it to freeze it. Back away to win some distance.</p>
     paperMats = [0, 1, 2, 3].map(function (k) { return new THREE.MeshStandardMaterial({ map: paperTex(k), transparent: true, alphaTest: 0.5, roughness: 0.95, side: THREE.DoubleSide, polygonOffset: true, polygonOffsetFactor: -1 }); });
     ballMat = new THREE.MeshStandardMaterial({ color: 0x9c9482, roughness: 1, flatShading: true });
     canMat = new THREE.MeshStandardMaterial({ color: 0x6d7478, roughness: 0.35, metalness: 0.8 });
-    puddleTex = canvasTex(128, 128, function (c, w, h) {
+    // Irregular puddle outline with a crisp, slightly ragged edge.
+    puddleTex = canvasTex(256, 256, function (c, w, h) {
       c.clearRect(0, 0, w, h);
-      for (var i = 0; i < 7; i++) { var x = w / 2 + (Math.random() - 0.5) * 50, y = h / 2 + (Math.random() - 0.5) * 50, r = 18 + Math.random() * 26;
-        var g = c.createRadialGradient(x, y, r * 0.4, x, y, r); g.addColorStop(0, "rgba(255,255,255,1)"); g.addColorStop(1, "rgba(255,255,255,0)"); c.fillStyle = g; c.fillRect(0, 0, w, h); }
+      for (var i = 0; i < 9; i++) { var x = w / 2 + (Math.random() - 0.5) * 110, y = h / 2 + (Math.random() - 0.5) * 110, r = 30 + Math.random() * 55;
+        var g = c.createRadialGradient(x, y, r * 0.2, x, y, r); g.addColorStop(0, "rgba(255,255,255,1)"); g.addColorStop(1, "rgba(255,255,255,0)"); c.fillStyle = g; c.fillRect(0, 0, w, h); }
+      var d = c.getImageData(0, 0, w, h), px3 = d.data;
+      for (var j = 3; j < px3.length; j += 4) { var a0 = px3[j] / 255 + (Math.random() - 0.5) * 0.06, t0 = Math.min(1, Math.max(0, (a0 - 0.42) / 0.12)); px3[j] = Math.round(t0 * t0 * (3 - 2 * t0) * 255); }
+      c.putImageData(d, 0, 0);
     });
-    puddleMat2 = new THREE.MeshStandardMaterial({ color: 0x030607, roughness: 0.02, metalness: 0.2, transparent: true, alphaMap: puddleTex, opacity: 0.62, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2 });
+    puddleTex.encoding = THREE.LinearEncoding;
+    puddleMat2 = new THREE.ShaderMaterial({
+      uniforms: THREE.UniformsUtils.merge([THREE.UniformsLib.fog, { tReflect: { value: null }, tMask: { value: null }, texMat: { value: new THREE.Matrix4() }, time: { value: 0 } }]),
+      vertexShader: [
+        "uniform mat4 texMat; varying vec4 vRefl; varying vec2 vUv; varying vec3 vWorld;",
+        "#include <fog_pars_vertex>",
+        "void main() {",
+        "  vUv = uv;",
+        "  vec4 wp = modelMatrix * instanceMatrix * vec4(position, 1.0);",
+        "  vWorld = wp.xyz; vRefl = texMat * wp;",
+        "  vec4 mvPosition = viewMatrix * wp; gl_Position = projectionMatrix * mvPosition;",
+        "  #include <fog_vertex>",
+        "}"].join("\n"),
+      fragmentShader: [
+        "uniform sampler2D tReflect; uniform sampler2D tMask; uniform float time;",
+        "varying vec4 vRefl; varying vec2 vUv; varying vec3 vWorld;",
+        "#include <fog_pars_fragment>",
+        "void main() {",
+        "  float m = texture2D(tMask, vUv).a; if (m < 0.01) discard;",
+        "  vec2 p = vWorld.xz * 7.0;",
+        "  vec2 rip = vec2(sin(p.x * 1.3 + time * 1.1) * cos(p.y * 0.9 - time * 0.8), cos(p.x * 0.7 - time * 0.9) * sin(p.y * 1.5 + time * 1.2)) + 0.5 * vec2(sin(p.y * 3.1 + time * 2.3), cos(p.x * 2.7 - time * 1.9));",
+        "  vec4 uvr = vRefl; uvr.xy += rip * 0.006 * uvr.w;",
+        "  vec3 refl = texture2DProj(tReflect, uvr).rgb;",
+        "  vec3 V = normalize(cameraPosition - vWorld);",
+        "  float fres = 0.4 + 0.45 * pow(1.0 - clamp(V.y, 0.0, 1.0), 4.0);",
+        "  vec3 r2 = max(refl - 0.08, 0.0); r2 = r2 * 0.45 + r2 * r2 * 12.0;",   // fog sinks to black, lamps stay bright
+        "  vec3 col = vec3(0.003, 0.006, 0.008) + r2 * fres;",
+        "  float edge = smoothstep(0.0, 0.5, m);",
+        "  col = mix(col * 0.55, col, edge);",            // the wet rim is darker than the open water
+        "  gl_FragColor = vec4(col, 0.97 * smoothstep(0.0, 0.15, m));",
+        "  #include <fog_fragment>",
+        "  #include <encodings_fragment>",
+        "}"].join("\n"),
+      transparent: true, depthWrite: false, fog: true, polygonOffset: true, polygonOffsetFactor: -2
+    });
+    puddleMat2.uniforms.tMask.value = puddleTex;
+  }
+  // One mirror camera for the floor plane, shared by every puddle.
+  var puddleMeshes = [], reflRT = null, reflCam = new THREE.PerspectiveCamera(), _rp = new THREE.Vector3(), _cp = new THREE.Vector3(),
+      _la = new THREE.Vector3(), _tg = new THREE.Vector3(), _rm = new THREE.Matrix4(), _pl = new THREE.Plane(), _cl = new THREE.Vector4(), _qv = new THREE.Vector4(),
+      _up = new THREE.Vector3(0, 1, 0);
+  function renderPuddleReflection() {
+    if (!puddleMat2 || !puddleMeshes.length || cityMode) return;
+    var sz = renderer.getDrawingBufferSize(new THREE.Vector2()), rw = Math.max(2, Math.floor(sz.x / 2)), rh = Math.max(2, Math.floor(sz.y / 2));
+    if (!reflRT) reflRT = new THREE.WebGLRenderTarget(rw, rh, { minFilter: THREE.LinearFilter, magFilter: THREE.LinearFilter });
+    else if (reflRT.width !== rw || reflRT.height !== rh) reflRT.setSize(rw, rh);
+    camera.updateMatrixWorld();
+    _cp.setFromMatrixPosition(camera.matrixWorld);
+    _rp.set(_cp.x, 0.009, _cp.z);
+    if (_cp.y <= _rp.y) return;
+    var view = _cp.clone().sub(_rp).negate().reflect(_up).negate(); view.add(_rp);       // camera mirrored under the floor
+    _rm.extractRotation(camera.matrixWorld);
+    _la.set(0, 0, -1).applyMatrix4(_rm).add(_cp);
+    _tg.subVectors(_rp, _la).reflect(_up).negate().add(_rp);
+    reflCam.position.copy(view);
+    reflCam.up.set(0, 1, 0).applyMatrix4(_rm).reflect(_up);
+    reflCam.lookAt(_tg);
+    reflCam.near = camera.near; reflCam.far = camera.far; reflCam.updateMatrixWorld();
+    reflCam.projectionMatrix.copy(camera.projectionMatrix);
+    var tm = puddleMat2.uniforms.texMat.value;
+    tm.set(0.5, 0, 0, 0.5, 0, 0.5, 0, 0.5, 0, 0, 0.5, 0.5, 0, 0, 0, 1);
+    tm.multiply(reflCam.projectionMatrix); tm.multiply(reflCam.matrixWorldInverse);
+    // oblique near plane: nothing below the floor gets into the mirror image
+    _pl.setFromNormalAndCoplanarPoint(_up, _rp); _pl.applyMatrix4(reflCam.matrixWorldInverse);
+    _cl.set(_pl.normal.x, _pl.normal.y, _pl.normal.z, _pl.constant);
+    var pe = reflCam.projectionMatrix.elements;
+    _qv.x = (Math.sign(_cl.x) + pe[8]) / pe[0]; _qv.y = (Math.sign(_cl.y) + pe[9]) / pe[5]; _qv.z = -1; _qv.w = (1 + pe[10]) / pe[14];
+    _cl.multiplyScalar(2 / _cl.dot(_qv));
+    pe[2] = _cl.x; pe[6] = _cl.y; pe[10] = _cl.z + 1 - 0.003; pe[14] = _cl.w;
+    puddleMeshes.forEach(function (m) { m.visible = false; });
+    var prev = renderer.getRenderTarget();
+    renderer.setRenderTarget(reflRT); renderer.clear(); renderer.render(scene, reflCam); renderer.setRenderTarget(prev);
+    puddleMeshes.forEach(function (m) { m.visible = true; });
+    puddleMat2.uniforms.tReflect.value = reflRT.texture;
+    puddleMat2.uniforms.time.value = performance.now() / 1000;
   }
   function addLitter(L) {
     litterMats();
@@ -1139,9 +1217,12 @@ Look at it to freeze it. Back away to win some distance.</p>
     inst(new THREE.CylinderGeometry(0.033, 0.033, 0.12, 10), canMat, L.can, function (it) {
       v.set(it[0], 0.033, it[1]); e.set(0, it[2], Math.PI / 2); q.setFromEuler(e); sc.set(1, Math.random() < 0.4 ? 0.6 : 1, 1);
     });
+    puddleMeshes = [];
+    var before = levelGroup.children.length;
     inst(new THREE.PlaneGeometry(1, 1), puddleMat2, L.pud, function (it) {
       v.set(it[0], 0.009, it[1]); e.set(-Math.PI / 2, 0, it[2]); q.setFromEuler(e); sc.set(it[3], it[4], 1);
     });
+    if (levelGroup.children.length > before) puddleMeshes.push(levelGroup.children[levelGroup.children.length - 1]);
   }
 
   function buildLevel(hunt) {
@@ -1335,20 +1416,29 @@ Look at it to freeze it. Back away to win some distance.</p>
     })();
     // Litter on the floor: torn dirty paper, crumpled balls, cans; dark reflective puddles.
     var litter = { paper: [[], [], [], []], ball: [], can: [], pud: [] };
-    function litterCell(cx0, cz0, n) {
-      for (var q = 0; q < n; q++) {
-        var nearWall = Math.random() < 0.6, ox = (Math.random() - 0.5) * (nearWall ? 2.6 : 1.6), oz = (Math.random() - 0.5) * (nearWall ? 2.6 : 1.6);
-        litter.paper[Math.floor(Math.random() * 4)].push([cx0 + ox, cz0 + oz, Math.random() * 6.28, 0.3 + Math.random() * 0.4]);
+    // A little litter swept against the walls in some cells, none in most; a puddle now and then.
+    function litterCell(gx, gz) {
+      var cx0 = (gx + 0.5) * CELL, cz0 = (gz + 0.5) * CELL, walls = [];
+      for (var k = 0; k < 4; k++) if (grid[gz + DIRS[k][1]][gx + DIRS[k][0]] === 1) walls.push(DIRS[k]);
+      if (walls.length && Math.random() < 0.3) {
+        var wd = walls[Math.floor(Math.random() * walls.length)], n = 2 + Math.floor(Math.random() * 4);
+        var along = (Math.random() - 0.5) * 1.6;                       // where along the wall the pile sits
+        for (var q = 0; q < n; q++) {
+          var off = CELL / 2 - 0.15 - Math.random() * 0.45, sl = along + (Math.random() - 0.5) * 1.1;
+          var ox = wd[0] * off + (wd[0] === 0 ? sl : 0), oz = wd[1] * off + (wd[1] === 0 ? sl : 0);
+          litter.paper[Math.floor(Math.random() * 4)].push([cx0 + ox, cz0 + oz, Math.random() * 6.28, 0.25 + Math.random() * 0.3]);
+        }
+        var bo = CELL / 2 - 0.2;
+        if (Math.random() < 0.35) litter.ball.push([cx0 + wd[0] * bo + (wd[0] === 0 ? along : 0), cz0 + wd[1] * bo + (wd[1] === 0 ? along : 0), 0.05 + Math.random() * 0.04]);
+        if (Math.random() < 0.2) litter.can.push([cx0 + wd[0] * bo + (wd[0] === 0 ? -along : 0), cz0 + wd[1] * bo + (wd[1] === 0 ? -along : 0), Math.random() * 6.28]);
       }
-      if (Math.random() < 0.45) litter.ball.push([cx0 + (Math.random() - 0.5) * 2.4, cz0 + (Math.random() - 0.5) * 2.4, 0.05 + Math.random() * 0.05]);
-      if (Math.random() < 0.25) litter.can.push([cx0 + (Math.random() - 0.5) * 2.4, cz0 + (Math.random() - 0.5) * 2.4, Math.random() * 6.28]);
-      if (Math.random() < 0.35) litter.pud.push([cx0 + (Math.random() - 0.5) * 1.4, cz0 + (Math.random() - 0.5) * 1.4, Math.random() * 6.28, 0.9 + Math.random() * 1.3, 0.6 + Math.random() * 0.9]);
+      if (Math.random() < 0.18) litter.pud.push([cx0 + (Math.random() - 0.5) * 1.2, cz0 + (Math.random() - 0.5) * 1.2, Math.random() * 6.28, 1.1 + Math.random() * 1.2, 0.8 + Math.random() * 0.8]);
     }
     for (z = 1; z < gh - 1; z++) for (x = 1; x < gw - 1; x++) {
       if (grid[z][x] !== 0 || trainSet[z * 1000 + x]) continue;
       if (x <= 1 && z >= cy - 2 && z <= cy + 2) continue;            // the track bed in the wake-up room
       if (railHall && x >= railHall.xa && x <= railHall.xb && z === railHall.z0 + 1) continue;
-      litterCell((x + 0.5) * CELL, (z + 0.5) * CELL, Math.random() < 0.85 ? 4 + Math.floor(Math.random() * 9) : 1);
+      litterCell(x, z);
     }
     addLitter(litter);
     // Props from the real station: wooden barriers along the walls, puddles, dead fluorescent tubes.
@@ -2396,6 +2486,7 @@ Look at it to freeze it. Back away to win some distance.</p>
       camera.position.x += (Math.random() - 0.5) * 0.14 * k2; camera.position.y += (Math.random() - 0.5) * 0.12 * k2; camera.position.z += (Math.random() - 0.5) * 0.14 * k2;
     }
     ui();
+    renderPuddleReflection();
     renderer.render(scene, camera);
     el.gl.dataset.sceneReady = "1";
     if (wetAnalyser) { var samples = new Float32Array(wetAnalyser.fftSize); wetAnalyser.getFloatTimeDomainData(samples); for (var i = 0; i < samples.length; i++) wetPeak = Math.max(wetPeak, Math.abs(samples[i])); }
