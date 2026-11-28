@@ -2584,7 +2584,7 @@ Look at it to freeze it. Back away to win some distance.</p>
     pool.forEach(function (l) { l.visible = true; });
     el.blinkBtn.textContent = "Hold to blink"; el.choices.hidden = true;
     buildLevel(false); resetPlayer();
-    wake.t = (level === 1 && gmode === "escape") ? 0 : 99; wake.grace = 0; wake.hot = false; wake.floor = false; wakeRoll = 0;
+    wake.t = (level === 1 && gmode === "escape") ? 0 : 99; wake.grace = 0; wake.hot = false; wake.floor = false; wake.where = 0; wakeRoll = 0;
     vis = { phase: "calm", t: 0, next: wake.t === 0 ? 20 : 12 + Math.random() * 10, dur: 0, fake: false, first: true, cueT: 10 + Math.random() * 8, hb: 0, warnLen: 0, q: [] }; lvlTime = 0; vanish(); updateHud();
     if (wake.t === 0 && startBench) { px = startBench.x; pz = startBench.z; yaw = Math.PI / 2; pitch = -0.32; camY = -0.5; } else { camY = 0; }
     if (metro.active) { metro.active = false; metroAudioStop(); camera.far = 60; camera.updateProjectionMatrix(); }
@@ -2775,21 +2775,18 @@ Look at it to freeze it. Back away to win some distance.</p>
     startBench.group.visible = false; var bi2 = blockers.indexOf(startBench.block); if (bi2 >= 0) blockers.splice(bi2, 1);
   }
   /* ---------- Night metro intro ----------
-     An ordinary night ride from Slussen towards T-Centralen. You step in, the doors close, Stockholm slides past;
-     you look right, then left, at the other passengers. Then a jolt: strange walls outside, the car starts to rock,
-     and every time you blink someone is gone, screaming. The train crashes, you are thrown out, everything goes
-     black, and you wake up on the floor of Kymlinge, the station nobody can travel to. Space skips. */
-  var MT = { walkIn: 0.6, inside: 2.8, doors: 3.3, depart: 4.5, lookR: 6.6, lookL: 9.2, front: 11.6, jolt: 12.6,
-             blinks: [14.0, 15.3, 16.4, 17.3, 18.0], crash: 19.0, black: 19.6, end: 21.4 };
+     An ordinary night ride from Slussen towards T-Centralen in an empty, grey car. You step in, the doors close,
+     Stockholm slides past, you look around. Then a jolt: strange walls outside, the car rocks harder and harder
+     ("What's going on?!", "Ahhh! What's happening?!"), the train crashes, you are thrown out, everything goes black,
+     and you come to on the floor of Kymlinge ("What... happened...", "Where am I?"). Space skips. */
+  var MT = { walkIn: 0.6, inside: 3.0, doors: 3.4, depart: 4.6, lookR: 6.6, lookL: 8.8, front: 10.8, jolt: 11.6,
+             line1: 12.3, line2: 14.9, crash: 17.2, black: 17.8, end: 19.6 };
   var metro = { ready: false, active: false, t: 0, scene: null, parts: {} }, MV = 15;
   var MW = 2.7, MLEN = 16, MH = 2.2, MEYE = 1.66;
-  var mPlayer = new THREE.Vector3(0.35, 0, 0.25), mBoard = new THREE.Vector3(0, 0, 3.4);
-  var mAssets = { pass: {}, sky: null }, mLoadLeft = 6, wakeRoll = 0;
+  var mPlayer = new THREE.Vector3(0.6, 0, 0.45), mBoard = new THREE.Vector3(0, 0, 3.4);   // the vestibule pole stands at the origin
+  var mAssets = { sky: null }, mLoadLeft = 1, wakeRoll = 0;
   (function loadMetroAssets() {
-    var L = new THREE.GLTFLoader(), done = function () { if (--mLoadLeft === 0) metro.ready = true; };
-    ["p_old_man", "p_hoodie", "p_leather", "p_headphones", "p_phone"].forEach(function (n) {
-      L.load("models/metro/" + n + ".glb", function (g) { mAssets.pass[n] = g; done(); }, undefined, function () { mLoadLeft = 1e9; });
-    });
+    var done = function () { if (--mLoadLeft === 0) metro.ready = true; };
     new THREE.TextureLoader().load("models/metro/stockholm_night.jpg", function (t) { t.encoding = THREE.sRGBEncoding; mAssets.sky = t; done(); }, undefined, function () { mLoadLeft = 1e9; });
   })();
 
@@ -2808,8 +2805,8 @@ Look at it to freeze it. Back away to win some distance.</p>
     S.background = new THREE.Color(0x01030a);
     S.fog = new THREE.FogExp2(0x030814, 0.006);
     var car = new THREE.Group(); S.add(car); P.car = car;
-    P.amb = new THREE.AmbientLight(0x4f6a82, 0.16); S.add(P.amb);
-    P.lamps = [-5.5, 0, 5.5].map(function (x) { var l = new THREE.PointLight(0xc4e2ff, 0.62, 8, 1.7); l.position.set(x, MH - 0.15, 0); car.add(l); return l; });
+    P.amb = new THREE.AmbientLight(0x46566a, 0.14); S.add(P.amb);
+    P.lamps = [-5.5, 0, 5.5].map(function (x) { var l = new THREE.PointLight(0xb8cde0, 0.5, 8, 1.7); l.position.set(x, MH - 0.15, 0); car.add(l); return l; });
 
     // --- materials ---
     var floorT = mTex(256, 256, function (c, w, h) {
@@ -2818,18 +2815,18 @@ Look at it to freeze it. Back away to win some distance.</p>
       for (var k = 0; k < 6; k++) { var g = c.createRadialGradient(Math.random() * w, Math.random() * h, 2, Math.random() * w, Math.random() * h, 40); g.addColorStop(0, "rgba(20,18,15,0.35)"); g.addColorStop(1, "rgba(20,18,15,0)"); c.fillStyle = g; c.fillRect(0, 0, w, h); }
     }, 8, 2);
     var seatT = mTex(128, 128, function (c, w, h) {      // SL-style blue moquette
-      c.fillStyle = "#1d3a78"; c.fillRect(0, 0, w, h);
-      for (var y = 0; y < h; y += 16) for (var x = 0; x < w; x += 16) { c.fillStyle = (x + y) % 32 ? "#2a54a8" : "#13285a"; c.fillRect(x + 3, y + 3, 6, 6); c.fillStyle = "#c8323a"; c.fillRect(x + 11, y + 11, 2, 2); }
+      c.fillStyle = "#33383c"; c.fillRect(0, 0, w, h);           // worn grey moquette
+      for (var y = 0; y < h; y += 16) for (var x = 0; x < w; x += 16) { c.fillStyle = (x + y) % 32 ? "#40464b" : "#272b2e"; c.fillRect(x + 3, y + 3, 6, 6); c.fillStyle = "#575d61"; c.fillRect(x + 11, y + 11, 2, 2); }
       for (var i = 0; i < 900; i++) { c.fillStyle = "rgba(0,0,0,0.25)"; c.fillRect(Math.random() * w, Math.random() * h, 1, 1); }
     }, 3, 1);
     // side wall with window and door holes (alpha)
     function wallTex() {
       return canvasTex(2048, 256, function (c, w, h) {
         c.clearRect(0, 0, w, h);
-        c.fillStyle = "#9da3a2"; c.fillRect(0, 0, w, h);
+        c.fillStyle = "#6c7173"; c.fillRect(0, 0, w, h);
         for (var gi = 0; gi < 900; gi++) { c.fillStyle = "rgba(40,36,30," + (Math.random() * 0.12).toFixed(2) + ")"; c.fillRect(Math.random() * w, Math.random() * h, 3 + Math.random() * 10, 2 + Math.random() * 6); }
         var g = c.createLinearGradient(0, 0, 0, h); g.addColorStop(0, "rgba(255,255,255,0.15)"); g.addColorStop(0.55, "rgba(0,0,0,0)"); g.addColorStop(1, "rgba(0,0,0,0.25)"); c.fillStyle = g; c.fillRect(0, 0, w, h);
-        c.fillStyle = "#4a4e52"; c.fillRect(0, h * 0.62, w, h * 0.38);                 // dark lower panels
+        c.fillStyle = "#2e3234"; c.fillRect(0, h * 0.62, w, h * 0.38);                 // dark lower panels
         var px = function (x) { return (x + MLEN / 2) / MLEN * w; }, py = function (y) { return h - y / MH * h; };
         c.globalCompositeOperation = "destination-out";
         [[-6.6, -4.4], [-3.9, -1.5], [1.5, 3.9], [4.4, 6.6]].forEach(function (s) {    // windows over the benches
@@ -2845,14 +2842,14 @@ Look at it to freeze it. Back away to win some distance.</p>
     var wallMatM = new THREE.MeshStandardMaterial({ map: wallTex(), transparent: true, alphaTest: 0.5, roughness: 0.55, metalness: 0.15, side: THREE.DoubleSide });
     var glassMat = new THREE.MeshStandardMaterial({ color: 0x0a1018, transparent: true, opacity: 0.14, roughness: 0.05, metalness: 0.6, depthWrite: false });
     var steel = new THREE.MeshStandardMaterial({ color: 0xd2d6da, metalness: 0.9, roughness: 0.22 });
-    var plastic = new THREE.MeshStandardMaterial({ color: 0xbfc3bf, roughness: 0.6 });
+    var plastic = new THREE.MeshStandardMaterial({ color: 0x6a6f70, roughness: 0.7 });
 
     function box(w, h, d, mat, x, y, z, parent) { var m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat); m.position.set(x, y, z); (parent || car).add(m); return m; }
     // floor, ceiling
     var fl = new THREE.Mesh(new THREE.PlaneGeometry(MLEN, MW), new THREE.MeshStandardMaterial({ map: floorT, roughness: 0.7 })); fl.rotation.x = -Math.PI / 2; car.add(fl);
     var ce = new THREE.Mesh(new THREE.PlaneGeometry(MLEN, MW), plastic); ce.rotation.x = Math.PI / 2; ce.position.y = MH; car.add(ce);
     // light strips
-    var stripMat = new THREE.MeshStandardMaterial({ color: 0x9fb4c8, emissive: 0xbfdcff, emissiveIntensity: 0.7 }); P.stripMat = stripMat;
+    var stripMat = new THREE.MeshStandardMaterial({ color: 0x7f8c96, emissive: 0xa9c2d6, emissiveIntensity: 0.5 }); P.stripMat = stripMat;
     [-0.62, 0.62].forEach(function (z) { box(MLEN - 0.6, 0.03, 0.09, stripMat, 0, MH - 0.02, z); });
     // walls
     [-1, 1].forEach(function (sd) {
@@ -2860,7 +2857,7 @@ Look at it to freeze it. Back away to win some distance.</p>
       var gl2 = new THREE.Mesh(new THREE.PlaneGeometry(MLEN, MH), glassMat); gl2.position.set(0, MH / 2, sd * (MW / 2 + 0.03)); car.add(gl2);
     });
     // end walls
-    [-1, 1].forEach(function (sd) { var e = new THREE.Mesh(new THREE.PlaneGeometry(MW, MH), wallMatM.clone()); e.material.map = null; e.material.color.setHex(0xb8bcb8); e.material.transparent = false; e.position.set(sd * MLEN / 2, MH / 2, 0); e.rotation.y = -sd * Math.PI / 2; car.add(e); });
+    [-1, 1].forEach(function (sd) { var e = new THREE.Mesh(new THREE.PlaneGeometry(MW, MH), wallMatM.clone()); e.material.map = null; e.material.color.setHex(0x5f6466); e.material.transparent = false; e.position.set(sd * MLEN / 2, MH / 2, 0); e.rotation.y = -sd * Math.PI / 2; car.add(e); });
     // benches along the walls
     var seatMat = new THREE.MeshStandardMaterial({ map: seatT, roughness: 0.95 });
     [[-6.6, -1.4], [1.4, 6.6]].forEach(function (s) {
@@ -2877,7 +2874,7 @@ Look at it to freeze it. Back away to win some distance.</p>
     [-0.95, 0.95].forEach(function (z) { var r = new THREE.Mesh(new THREE.CylinderGeometry(0.016, 0.016, MLEN - 0.4, 10), steel); r.rotation.z = Math.PI / 2; r.position.set(0, 1.9, z); car.add(r); });
     // doors (+z side opens at the platform; -z side stays shut)
     P.doors = [];
-    var doorT = canvasTex(128, 256, function (c, w, h) { c.fillStyle = "#b8bcb8"; c.fillRect(0, 0, w, h); c.clearRect(18, 22, w - 36, h * 0.45); c.fillStyle = "#e3b51e"; c.fillRect(0, h - 10, w, 10); c.strokeStyle = "#222"; c.lineWidth = 6; c.strokeRect(0, 0, w, h); });
+    var doorT = canvasTex(128, 256, function (c, w, h) { c.fillStyle = "#7a7f80"; c.fillRect(0, 0, w, h); c.clearRect(18, 22, w - 36, h * 0.45); c.fillStyle = "#e3b51e"; c.fillRect(0, h - 10, w, 10); c.strokeStyle = "#222"; c.lineWidth = 6; c.strokeRect(0, 0, w, h); });
     var doorMat = new THREE.MeshStandardMaterial({ map: doorT, transparent: true, alphaTest: 0.5, roughness: 0.5, metalness: 0.2, side: THREE.DoubleSide });
     [-1, 1].forEach(function (sd) {
       [-1, 1].forEach(function (lr) {
@@ -2893,34 +2890,12 @@ Look at it to freeze it. Back away to win some distance.</p>
     var ads = ["Tunnelbana · Blå linjen", "SL · Res smart i natt", "Kom ihåg: sista tåget 01:12", "Sov inte på tåget"];
     [-1, 1].forEach(function (sd, si) {
       [-5.5, -2.7, 2.7, 5.5].forEach(function (x, i) {
-        var t = canvasTex(256, 64, function (c, w, h) { c.fillStyle = ["#f4f1e8", "#0e3b8a", "#1b1b1b", "#c8102e"][(i + si) % 4]; c.fillRect(0, 0, w, h); c.fillStyle = (i + si) % 4 === 0 ? "#111" : "#fff"; c.font = "bold 22px Arial"; c.fillText(ads[(i + si * 2) % 4], 12, 40); });
+        var t = canvasTex(256, 64, function (c, w, h) { c.fillStyle = ["#8a8a84", "#2c3540", "#1b1b1b", "#4a2a2a"][(i + si) % 4]; c.fillRect(0, 0, w, h); c.fillStyle = (i + si) % 4 === 0 ? "#222" : "#c8c8c4"; c.font = "bold 22px Arial"; c.fillText(ads[(i + si * 2) % 4], 12, 40); });
         var a = new THREE.Mesh(new THREE.PlaneGeometry(1.4, 0.32), new THREE.MeshStandardMaterial({ map: t, roughness: 0.6 })); a.position.set(x, 2.02, sd * (MW / 2 - 0.02)); if (sd > 0) a.rotation.y = Math.PI; car.add(a);
       });
     });
 
-    // --- passengers ---
     P.pass = []; P.mixers = [];
-    function addP(name, x, z, ry, t0) {
-      var g = mAssets.pass[name]; if (!g) return null;
-      var root = g.scene; root.position.set(x, 0, z); root.rotation.y = ry; car.add(root);
-      root.traverse(function (o) { if (o.isMesh) { o.frustumCulled = false; } });
-      var mx = new THREE.AnimationMixer(root); var act = mx.clipAction(g.animations[0]); act.play(); mx.update(t0 || 0);
-      P.mixers.push(mx); P.pass.push(root); return root;
-    }
-    var seatZ = MW / 2 - 0.3;
-    // right of you: woman with the phone, woman in leather, the hoodie; left: headphones, the old man
-    var ph = addP("p_phone", 1.45, 0.05, -Math.PI / 2, 5);
-    addP("p_headphones", -1.35, -0.15, Math.PI / 2, 3);
-    addP("p_leather", 2.7, -seatZ, 0, 4);
-    addP("p_old_man", -2.4, -seatZ, 0, 1);
-    addP("p_hoodie", 3.0, seatZ, Math.PI, 2);
-    if (ph) {   // her phone, screen lit
-      var hand = null; ph.traverse(function (o) { if (o.name === "Bip01_R_Hand") hand = o; });
-      if (hand) {
-        var phone = new THREE.Mesh(new THREE.BoxGeometry(0.008, 0.15, 0.075).scale(100, 100, 100), [0, 0, 0, 0, 0, 0].map(function (_, i) { return i === 0 ? new THREE.MeshBasicMaterial({ color: 0x6f95d8 }) : new THREE.MeshStandardMaterial({ color: 0x0c0c0e, roughness: 0.35, metalness: 0.4 }); }));
-        phone.position.set(9, 2, 4); hand.add(phone);
-      }
-    }
     // --- outside: Stockholm across Riddarfjärden, bridge railing, masts, water ---
     var out = new THREE.Group(); S.add(out); P.bridge = out;
     // photo widened with its own sky; the city part is ~90 m wide at 75 m, skyline just below eye level
@@ -3012,18 +2987,19 @@ Look at it to freeze it. Back away to win some distance.</p>
     metro.parts.ledT.needsUpdate = true;
   }
 
-  var mScreams = [], mScreamOrder = ["scream_f1", "scream_m1", "scream_f2", "scream_m2", "scream_m4", "scream_f3", "scream_m3"];
-  function loadScreams() {
-    if (!AC || mScreams.length) return;
-    mScreamOrder.forEach(function (n, i) {
-      fetch("audio/" + n + ".ogg").then(function (r) { if (!r.ok) throw new Error(n); return r.arrayBuffer(); })
-        .then(function (d) { return AC.decodeAudioData(d); }).then(function (buf) { mScreams[i] = buf; }).catch(function () {});
+  // the hero's voice (ElevenLabs), with subtitles
+  var heroVoice = {}, HERO = { going: "hero_whats_going_on", happening: "hero_whats_happening", happened: "hero_what_happened", where: "hero_where_am_i" };
+  function loadVoices() {
+    if (!AC || heroVoice.loaded) return; heroVoice.loaded = true;
+    Object.keys(HERO).forEach(function (k) {
+      fetch("audio/" + HERO[k] + ".ogg").then(function (r) { if (!r.ok) throw new Error(k); return r.arrayBuffer(); })
+        .then(function (d) { return AC.decodeAudioData(d); }).then(function (buf) { heroVoice[k] = buf; }).catch(function () {});
     });
   }
-  function scream(i, vol, rate) {
-    var buf = mScreams[i % mScreamOrder.length]; if (!AC || !buf) return;
-    try { var s = AC.createBufferSource(); s.buffer = buf; s.playbackRate.value = rate || 1; var g = AC.createGain(); g.gain.value = vol || 0.8;
-      s.connect(g); g.connect(master); s.start(); } catch (e) {}
+  function heroSay(k, text) {
+    showToast(text);
+    var buf = heroVoice[k]; if (!AC || !buf || !soundOn) return;
+    try { var s2 = AC.createBufferSource(); s2.buffer = buf; var g = AC.createGain(); g.gain.value = 1.1; s2.connect(g); g.connect(master); s2.start(); } catch (e) {}
   }
   function mBoom(k) {          // deep impact
     if (!AC || !noiseBuf) return;
@@ -3050,7 +3026,7 @@ Look at it to freeze it. Back away to win some distance.</p>
     P.bridge.visible = true; P.tunnel.visible = false; P.plat.visible = true; P.tunPlus.position.x = 0;
     yaw = 0; pitch = -0.04; wakeRoll = 0; camera.far = 220; camera.updateProjectionMatrix();
     lid = 0; glEl.style.filter = "";
-    metroAudioStart(); loadScreams();
+    metroAudioStart(); loadVoices();
   }
   function endMetro() {
     metro.active = false; metroAudioStop();
@@ -3075,11 +3051,7 @@ Look at it to freeze it. Back away to win some distance.</p>
     else if (t >= MT.lookL && t < MT.front) auto = 1.3;
     else if (t >= MT.front && t < MT.jolt) auto = 0;
     var autoPitch = -0.04;
-    if (t >= MT.jolt && t < MT.crash) {        // eyes go to the one who is about to vanish
-      for (var bk = 0; bk < MT.blinks.length; bk++) if (t < MT.blinks[bk] + 0.5 && P.pass[bk]) {
-        var pp = P.pass[bk].position; auto = Math.atan2(-(pp.x - mPlayer.x), -(pp.z - mPlayer.z)); autoPitch = Math.abs(pp.z) > 0.6 ? -0.2 : -0.08; break;
-      }
-    }
+    if (t < MT.inside) auto = Math.atan2(-(mPlayer.x - mBoard.x), -(mPlayer.z - mBoard.z)) * smooth01((t - MT.walkIn - 0.9) / 1.2);   // face where you are walking
     if (auto !== null) { yaw += (auto - yaw) * Math.min(1, dt * 2.6); pitch += (autoPitch - pitch) * Math.min(1, dt * 2); }
     else yaw = Math.max(-2.2, Math.min(2.2, yaw));
     for (var i = 0; i < P.mixers.length; i++) P.mixers[i].update(dt);
@@ -3110,24 +3082,16 @@ Look at it to freeze it. Back away to win some distance.</p>
     var fl = 1;
     if (t > MT.jolt && t < MT.crash) fl = Math.random() < 0.12 + 0.2 * rock ? 0.15 : 0.75 + 0.25 * Math.random();
     P.lamps.forEach(function (l) { l.intensity = 0.62 * fl; }); P.stripMat.emissiveIntensity = 0.7 * fl; P.amb.intensity = 0.16 * (0.4 + 0.6 * fl);
-    // blinking: lids close, someone is gone when they open, and you hear them scream
     lid = 0;
-    MT.blinks.forEach(function (bt, k) {
-      var d = t - bt;
-      if (d > -0.12 && d < 0.42) lid = Math.max(lid, d < 0 ? 1 + d / 0.12 : d < 0.2 ? 1 : 1 - (d - 0.2) / 0.22);
-      if (once("blink" + k, bt)) {
-        if (P.pass[k]) P.pass[k].visible = false;
-        scream(k, 0.85, 0.95 + Math.random() * 0.1); if (k >= 2) scream(k + 3, 0.5, 1.05);
-        metro.shake = Math.max(metro.shake, 0.6); mThump(1.3);
-      }
-    });
+    if (once("line1", MT.line1)) heroSay("going", "What's going on?!");
+    if (once("line2", MT.line2)) { heroSay("happening", "Ahhh! What's happening?!"); metro.shake = Math.max(metro.shake, 0.8); mThump(1.3); }
     // LED: an ordinary line at first, then it goes wrong
     var led = t < MT.jolt ? (t < MT.depart ? "Slussen   ·   Mot T-Centralen   ·   " : "Nästa station: Gamla stan   ·   Mot T-Centralen   ·   ")
             : (Math.random() < 0.5 ? "K Y M L I N G E   ·   K Y M L I N G E   ·   " : "Näs#a st@tion: ?????   ·   ");
     ledDraw(led, t);
     // the crash: impact, glass, you are thrown, white, then black
     if (once("crash", MT.crash)) {
-      mBoom(1.4); mScreech(1.2, 1.4); mHiss(1.6, 2.2); scream(5, 0.9, 1); scream(6, 0.7, 0.9);
+      mBoom(1.4); mScreech(1.2, 1.4); mHiss(1.6, 2.2);
       metro.shake = 2; setFade(0.95, "#ffffff"); fadeTarget = 0.4; fadeSpeed = 2.5;
     }
     if (once("black", MT.black)) { setFade(0.4, "#000"); fadeTarget = 1; fadeSpeed = 2.2; metroAudioStop(); }
@@ -3156,8 +3120,8 @@ Look at it to freeze it. Back away to win some distance.</p>
     P.car.position.y = Math.sin(t * 9.3) * 0.004 * sw + Math.abs(Math.sin(t * 5.1)) * 0.03 * rk;
     var eye = new THREE.Vector3(mPlayer.x, MEYE, mPlayer.z);
     if (t < MT.inside) {     // step off the platform into the car
-      var e = smooth01((t - MT.walkIn) / (MT.inside - MT.walkIn));
-      eye.set(mBoard.x + (mPlayer.x - mBoard.x) * e, MEYE + Math.sin(e * Math.PI * 4) * 0.025, mBoard.z + (mPlayer.z - mBoard.z) * e);
+      var e = smooth01((t - MT.walkIn) / (MT.inside - MT.walkIn)), side = smooth01((e - 0.4) / 0.6);   // through the doorway, then right round the pole
+      eye.set(mBoard.x + (mPlayer.x - mBoard.x) * side, MEYE + Math.sin(e * Math.PI * 4) * 0.025, mBoard.z + (mPlayer.z - mBoard.z) * e);
     }
     P.car.localToWorld(eye);
     camera.position.copy(eye);
@@ -3188,13 +3152,15 @@ Look at it to freeze it. Back away to win some distance.</p>
       removeBench();
       if (t - dt < 6.1 && t >= 6.1) footstep(1, 0);
     }
-    if (t >= 8) { wake.t = 8; camY = 0; wakeRoll = 0; wake.floor = false; glEl.style.filter = ""; lid = 0; ignoreUntilRelease = true; }
+    if (wake.floor && t - dt < 4.2 && t >= 4.2) heroSay("happened", "What... happened...");
+    if (t >= 8) { if (wake.floor) wake.where = 1.2; wake.t = 8; camY = 0; wakeRoll = 0; wake.floor = false; glEl.style.filter = ""; lid = 0; ignoreUntilRelease = true; }
     audioStep(dt, 40, false);
     lightT -= dt; if (lightT <= 0) { updateLights(); lightT = 0.12; }
     return false;
   }
   function stepPlay(dt) {
     if (wake.t < 8) return stepWake(dt);
+    if (wake.where > 0) { wake.where -= dt; if (wake.where <= 0) heroSay("where", "Where am I?"); }
     if (gmode !== "boss") visStep(dt);
     var grace = vis.phase !== "visit";
     for (var ii = items.length - 1; ii >= 0; ii--) if (Math.hypot(items[ii].x - px, items[ii].z - pz) < 0.9) collect(items[ii]);
