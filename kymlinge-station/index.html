@@ -118,7 +118,10 @@ h1 {
 .fxcv { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; z-index: 5; }
 .gflash { position: absolute; inset: 0; pointer-events: none; z-index: 5; opacity: 0; background: radial-gradient(circle at 50% 55%, rgba(255,222,140,0.75), rgba(255,170,60,0.25) 45%, rgba(255,150,40,0) 75%); }
 .fade { position: absolute; inset: 0; background: #000; opacity: 0; pointer-events: none; z-index: 4; }
-.toast { position: absolute; left: 50%; bottom: 17%; transform: translateX(-50%); padding: 6px 14px; font-size: 13px; letter-spacing: 0.1em; text-transform: uppercase; color: #ffe9a8; background: rgba(0,0,0,0.55); border: 1px solid rgba(255,214,120,0.5); opacity: 0; transition: opacity .25s; pointer-events: none; white-space: nowrap; }
+.sprintHud { position: absolute; right: 14px; bottom: 14px; padding: 8px 14px; font-size: 14px; letter-spacing: 0.12em; text-transform: uppercase; color: #dff3ec; background: rgba(0,0,0,0.6); border: 1px solid rgba(160,225,205,0.55); pointer-events: none; white-space: nowrap; z-index: 5; }
+.sprintHud kbd { font: inherit; font-weight: 700; padding: 1px 7px; margin-right: 6px; border: 1px solid currentColor; border-radius: 3px; }
+.sprintHud.on { background: #bfe9da; color: #07120e; }
+.toast { position: absolute; left: 50%; bottom: 17%; transform: translateX(-50%); padding: 6px 14px; font-size: 13px; letter-spacing: 0.1em; text-transform: uppercase; color: #dff3ec; background: rgba(0,0,0,0.55); border: 1px solid rgba(160,225,205,0.5); opacity: 0; transition: opacity .25s; pointer-events: none; white-space: nowrap; }
 .toast.show { opacity: 1; }
 .hud {
   position: absolute; top: 10px; left: 12px; right: 12px;
@@ -205,6 +208,7 @@ h1 {
       <canvas class="fxcv" id="fx"></canvas><div class="gflash" id="gflash"></div>
       <canvas class="map" id="map" width="120" height="120" aria-hidden="true"></canvas>
       <div class="toast" id="toast" aria-live="polite"></div>
+      <div class="sprintHud" id="sprintHud" hidden></div>
       <div class="dir" id="dir" aria-hidden="true"><i id="dirArrow"></i><span>It</span></div>
       <div class="hud">
         <span id="levelLabel">Level 1</span>
@@ -235,7 +239,7 @@ Look at it to freeze it. Back away to win some distance.</p>
   <div class="controls">
     <button class="ctl" id="walkBtn" type="button">Hold to walk</button>
     <button class="ctl" id="blinkBtn" type="button">Hold to blink</button>
-    <button class="ctl" id="sprintBtn" type="button">Sprint (1)</button>
+    <button class="ctl" id="sprintBtn" type="button">Sprint · press Shift (1)</button>
   </div>
   <p class="hint">Move: W A S D or arrow keys. Look: drag the view. Blink: hold Space. Sprint: Shift, 3 seconds, one per run plus one for every golden Dalahäst. Collect buns and Dalahästar on the floor. Full screen: F. On a touch screen, hold Walk, hold Blink, and drag the view to look.</p>
 </main>
@@ -255,7 +259,7 @@ Look at it to freeze it. Back away to win some distance.</p>
     level: $("levelLabel"), score: $("scoreLabel"), best: $("bestLabel"),
     status: $("status"), statusText: $("statusText"),
     fill: $("strainFill"), gapFill: $("gapFill"), sMeter: $("strainMeter"), gMeter: $("gapMeter"),
-    sprintBtn: $("sprintBtn"), walkBtn: $("walkBtn"), blinkBtn: $("blinkBtn"), soundBtn: $("soundBtn"), diffBtn: $("diffBtn"), fsBtn: $("fsBtn"),
+    sprintBtn: $("sprintBtn"), sprintHud: $("sprintHud"), walkBtn: $("walkBtn"), blinkBtn: $("blinkBtn"), soundBtn: $("soundBtn"), diffBtn: $("diffBtn"), fsBtn: $("fsBtn"),
     dir: $("dir"), dirArrow: $("dirArrow"),
     choices: $("choices"), leaveBtn: $("leaveBtn"), huntBtn: $("huntBtn")
   };
@@ -408,6 +412,7 @@ Look at it to freeze it. Back away to win some distance.</p>
     "look-behind-you", "face-your-fears", "it-s-behind-you", "don-t-turn-around", "keep-your-eyes-open", "nobody-leaves",
     "the-last-train-never-came", "it-knows-your-name", "wake-up", "titta-bakom-dig", "mot-din-radsla", "han-ar-kvar"];
   var grafCache = {};
+  var handTex = null;
   function graffitiMat(name, paint) {
     var key = paint + "/" + name;
     if (!grafCache[key]) {
@@ -798,17 +803,8 @@ Look at it to freeze it. Back away to win some distance.</p>
   function stripTexture(name) { return canvasTex(1024, 128, function (c, w, h) { drawStrip(c, 0, 0, w, h, name); }); }
   function plateTexture(name, nx) {
     nx = nx || 8;
-    return canvasTex(128 * nx, 384, function (c, w, h) {
-      var tw = 128, th = 128, tx, ty, base = [[168, 182, 186], [158, 172, 178], [176, 190, 194], [148, 162, 168]];
-      for (ty = 0; ty < 3; ty++) for (tx = 0; tx < nx; tx++) {
-        var bc = base[(tx * 3 + ty * 7 + Math.floor(Math.random() * 2)) % 4], v = Math.random() * 12 - 6;
-        c.fillStyle = "rgb(" + (bc[0] + v) + "," + (bc[1] + v) + "," + (bc[2] + v * 0.6) + ")"; c.fillRect(tx * tw, ty * th, tw, th);
-        var gl = c.createLinearGradient(tx * tw, ty * th, tx * tw + tw, ty * th + th); gl.addColorStop(0, "rgba(235,248,255,0.16)"); gl.addColorStop(0.5, "rgba(235,248,255,0)"); gl.addColorStop(1, "rgba(0,0,0,0.12)");
-        c.fillStyle = gl; c.fillRect(tx * tw, ty * th, tw, th);
-      }
-      c.fillStyle = "#232a2e"; for (tx = 0; tx <= nx; tx++) c.fillRect(tx * tw - 2, 0, 4, h); for (ty = 0; ty <= 3; ty++) c.fillRect(0, ty * th - 2, w, 4);
-      for (var q = 0; q < 5; q++) { var sx = Math.random() * w; var sg = c.createLinearGradient(sx, 0, sx + 90, h); sg.addColorStop(0, "rgba(255,255,255,0)"); sg.addColorStop(0.5, "rgba(255,255,255,0.18)"); sg.addColorStop(1, "rgba(255,255,255,0)"); c.fillStyle = sg; c.fillRect(sx, 0, 90, h); }
-      for (var d = 0; d < 6; d++) { var dg = c.createLinearGradient(0, 0, 0, h), dx = Math.random() * w; c.fillStyle = "rgba(10,20,26,0.14)"; c.fillRect(dx, Math.random() * h * 0.4, 5 + Math.random() * 12, 60 + Math.random() * 150); }
+    return canvasTex(128 * nx, 384, function (c, w, h) {   // just the blue enamel strip; no wall tiles around it
+      c.clearRect(0, 0, w, h);
       drawStrip(c, w / 2 - 460, 128, 920, 128, name);
     });
   }
@@ -1410,7 +1406,7 @@ Look at it to freeze it. Back away to win some distance.</p>
       var tm = new THREE.Mesh(new THREE.PlaneGeometry(CELL * 0.92, 2.7), tunnelMat); tm.position.set(tx, 1.35, e[0]); tm.rotation.y = e[1]; g.add(tm);
     });
     var pt = plateTexture("Kymlinge", 16); texKeep.push(pt);
-    var big = new THREE.Mesh(new THREE.PlaneGeometry(10.4, 1.95), new THREE.MeshStandardMaterial({ map: pt, roughness: 0.35, emissive: 0xffffff, emissiveMap: pt, emissiveIntensity: 0.22 }));
+    var big = new THREE.Mesh(new THREE.PlaneGeometry(10.4, 1.95), new THREE.MeshStandardMaterial({ map: pt, transparent: true, alphaTest: 0.05, roughness: 0.35, emissive: 0xffffff, emissiveMap: pt, emissiveIntensity: 0.22 }));
     big.position.set(3.03, 1.75, zc); big.rotation.y = Math.PI / 2; g.add(big);
     var pt2 = hangSignTexture("Kymlinge"); texKeep.push(pt2);
     var hgM = new THREE.MeshStandardMaterial({ map: pt2, transparent: true, alphaTest: 0.05, roughness: 0.45, emissive: 0xffffff, emissiveMap: pt2, emissiveIntensity: 0.25 });
@@ -2317,6 +2313,28 @@ Look at it to freeze it. Back away to win some distance.</p>
       if (putGraffiti(gx2, gz2, gdi, GRAFFITI[Math.floor(Math.random() * GRAFFITI.length)], randomPaint(), 1.0 + Math.random() * 0.9, 2.0 + Math.random() * 0.7)) pngN++;
     }
 
+    // Bloody handprints smeared on the walls, from the supplied white handprint tinted red.
+    (function () {
+      if (!handTex) { handTex = texLoader.load("graffiti/handprint.png"); handTex.encoding = THREE.sRGBEncoding; handTex.anisotropy = 4; }
+      var hMat = new THREE.MeshStandardMaterial({ map: handTex, color: 0x8e1612, transparent: true, roughness: 0.7, depthWrite: false, side: THREE.DoubleSide, polygonOffset: true, polygonOffsetFactor: -3,
+        emissive: 0x7a0f0b, emissiveMap: handTex, emissiveIntensity: 0.35 });
+      var hn = 0, ht = 0, wantH = 16;
+      while (hn < wantH && ht < 2000) {
+        ht++;
+        var hx = 1 + Math.floor(Math.random() * (gw - 2)), hz = 1 + Math.floor(Math.random() * (gh - 2));
+        if (grid[hz][hx] !== 1 || trainSet[hz * 1000 + hx]) continue;
+        var hdi = Math.floor(Math.random() * 4), hdx = DIRS[hdi][0], hdz = DIRS[hdi][1];
+        if (grid[hz + hdz][hx + hdx] !== 0 || usedFace[hx + "," + hz + "," + hdi]) continue;
+        var hwx = (hx + 0.5) * CELL + hdx * (CELL / 2 + 0.02), hwz = (hz + 0.5) * CELL + hdz * (CELL / 2 + 0.02);
+        if (inBlock(hwx + hdx * 0.5, hwz + hdz * 0.5)) continue;
+        var hs = 0.34 + Math.random() * 0.12, hm = new THREE.Mesh(new THREE.PlaneGeometry(hs, hs * 1.22), hMat);
+        var along = (Math.random() - 0.5) * 1.4;   // slide along the wall so prints do not sit in the middle every time
+        hm.position.set(hwx + (hdz !== 0 ? along : 0), 1.15 + Math.random() * 0.55, hwz + (hdx !== 0 ? along : 0));
+        hm.rotation.y = Math.atan2(hdx, hdz); hm.rotation.z = (Math.random() - 0.5) * 0.9; if (Math.random() < 0.5) hm.scale.x = -1;
+        levelGroup.add(hm); hn++;
+      }
+    })();
+
     // station name plates
     plates = [];
     var plated = 0, tries = 0;
@@ -2329,7 +2347,7 @@ Look at it to freeze it. Back away to win some distance.</p>
       usedFace[wx + "," + wz + "," + di] = true;
       var nm = (p > 0.5 && Math.random() < 0.4) ? "Kymlinge" : NAMES[Math.floor(Math.random() * NAMES.length)];
       var pt = plateTexture(corrupt(nm, p)); texKeep.push(pt);
-      var pm = new THREE.Mesh(new THREE.PlaneGeometry(2.4, 0.9), new THREE.MeshStandardMaterial({ map: pt, roughness: 0.4, emissive: 0xffffff, emissiveMap: pt, emissiveIntensity: 0.2 }));
+      var pm = new THREE.Mesh(new THREE.PlaneGeometry(2.4, 0.9), new THREE.MeshStandardMaterial({ map: pt, transparent: true, alphaTest: 0.05, roughness: 0.4, emissive: 0xffffff, emissiveMap: pt, emissiveIntensity: 0.2 }));
       pm.position.set((wx + 0.5) * CELL + pdx * (CELL / 2 + 0.01), 1.7, (wz + 0.5) * CELL + pdz * (CELL / 2 + 0.01));
       pm.rotation.y = Math.atan2(pdx, pdz);
       levelGroup.add(pm); plated++;
@@ -2362,7 +2380,7 @@ Look at it to freeze it. Back away to win some distance.</p>
   var state = "ready";          // ready | play | dead | won
   var px = 0, pz = 0, yaw = -Math.PI / 2, pitch = 0;
   var sprintLeft = 1, sprintT = 0;
-  function sprintUI() { el.sprintBtn.textContent = sprintLeft > 0 ? "Sprint (" + sprintLeft + ")" : "Sprint used"; el.sprintBtn.disabled = sprintLeft < 1; }
+  function sprintUI() { el.sprintBtn.textContent = sprintLeft > 0 ? "Sprint · press Shift (" + sprintLeft + ")" : "Sprint used"; el.sprintBtn.disabled = sprintLeft < 1; }
   function trySprint() {
     if (paused || state !== "play" || sprintLeft < 1 || sprintT > 0) return;
     sprintLeft--; sprintT = 3; sprintUI(); el.sprintBtn.classList.add("down"); shorten(0.8);
@@ -2817,7 +2835,7 @@ Look at it to freeze it. Back away to win some distance.</p>
     var tileT = mTex(256, 256, function (c, w, h) { c.fillStyle = "#c3ced0"; c.fillRect(0, 0, w, h); c.strokeStyle = "#76848a"; c.lineWidth = 3; for (var i = 0; i <= w; i += 32) { c.beginPath(); c.moveTo(i, 0); c.lineTo(i, h); c.stroke(); c.beginPath(); c.moveTo(0, i); c.lineTo(w, i); c.stroke(); } for (var k = 0; k < 40; k++) { c.fillStyle = "rgba(10,25,30,0.22)"; c.fillRect(Math.random() * w, Math.random() * h, 20, 3); } }, 20, 2);
     var pf = new THREE.Mesh(new THREE.PlaneGeometry(60, 5), new THREE.MeshStandardMaterial({ color: 0x45484a, roughness: 0.6 })); pf.rotation.x = -Math.PI / 2; pf.position.set(0, 0.0, 4.0); plat.add(pf);
     var edge = box(60, 0.02, 0.25, new THREE.MeshStandardMaterial({ color: 0x8a9499 }), 0, 0.01, 1.75, plat);
-    var bw = new THREE.Mesh(new THREE.PlaneGeometry(60, 4), new THREE.MeshStandardMaterial({ map: tileT, roughness: 0.5 })); bw.position.set(0, 2, 6.5); bw.rotation.y = Math.PI; plat.add(bw);
+    var bw = new THREE.Mesh(new THREE.PlaneGeometry(60, 4), new THREE.MeshStandardMaterial({ color: 0x3e484c, roughness: 0.9 })); bw.position.set(0, 2, 6.5); bw.rotation.y = Math.PI; plat.add(bw);
     var signT = stripTexture("Kymlinge"); signT.anisotropy = 4;   // same enamel strip as the station walls
     [-12, 0, 12].forEach(function (x) { var sg = new THREE.Mesh(new THREE.PlaneGeometry(3.0, 0.375), new THREE.MeshStandardMaterial({ map: signT, roughness: 0.5, emissive: 0x223355, emissiveIntensity: 0.3 })); sg.position.set(x, 2.3, 6.45); sg.rotation.y = Math.PI; plat.add(sg); });
     P.platLights = [-14, 0, 14].map(function (x) { var l = new THREE.PointLight(0xbfe0ff, 0.9, 14, 1.6); l.position.set(x, 3.2, 4); plat.add(l); return l; });
@@ -3618,7 +3636,15 @@ Look at it to freeze it. Back away to win some distance.</p>
     animItems(dt); mapTick(dt);
     animAxe(dt); animHunted(dt); scareTick(dt); breathTick(dt); mistTick(t);
   }
+  function sprintHudTick() {
+    var show = state === "play" && (sprintLeft > 0 || sprintT > 0), hd = el.sprintHud;
+    if (hd.hidden === show) hd.hidden = !show;
+    if (!show) return;
+    var on = sprintT > 0, txt = on ? "Sprinting " + Math.ceil(sprintT) + "s" : "<kbd>Shift</kbd>Sprint \u00d7" + sprintLeft;
+    if (hd._t !== txt) { hd._t = txt; hd.innerHTML = txt; hd.classList.toggle("on", on); }
+  }
   function draw() {
+    sprintHudTick();
     if (metro.active) { ui(); metroRender(); el.gl.dataset.sceneReady = "1"; glitchDraw(); return; }
     var moving = !RM && state === "play" && walkT > 0 && stepT > 0 && !held && forced <= 0 && (keys.KeyW || keys.KeyS || keys.ArrowUp || keys.ArrowDown || keys.KeyA || keys.KeyD || walkBtn);
     var cx = 0, cy = 0, cz = 0, rx = 0, ry = 0, rz = 0;
@@ -3678,6 +3704,8 @@ Look at it to freeze it. Back away to win some distance.</p>
       player: { get: function () { return { x: px, z: pz }; } }
     });
     window.__game.hunt = startHunt;
+    window.__game.tp = function (x, z, y) { px = x; pz = z; yaw = y; pitch = 0; };
+    window.__game.hands = function () { var o = []; levelGroup.traverse(function (m) { if (m.isMesh && m.material && m.material.map === handTex && handTex) o.push([m.position.x, m.position.y, m.position.z, m.rotation.y]); }); return o; };
     window.__game.growBlood = function (seconds) { updateBlood(seconds); };
     window.__game.move = function (dx, dz) { tryMove(dx, dz); };
     window.__game.position = function (x, z, angle, tilt) { px = x; pz = z; yaw = angle; pitch = tilt; bloodTrail.x = x; bloodTrail.z = z; bloodTrail.distance = 0; };
