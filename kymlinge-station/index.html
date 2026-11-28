@@ -90,6 +90,14 @@ h1 {
 #pauseBtn[aria-pressed="true"]::before { content: "\25B6  "; }
 #pauseLabel { font-size: 12px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--green); }
 
+.wrap.fs { position: fixed; inset: 0; z-index: 100; max-width: none; margin: 0; padding: 0; background: #000; display: flex; flex-direction: column; }
+.wrap.fs header { padding: 6px 12px; flex: none; }
+.wrap.fs header .sub, .wrap.fs .hint { display: none; }
+.wrap.fs .stage { flex: 1; min-height: 0; display: flex; flex-direction: column; border: 0; }
+.wrap.fs .view { flex: 1; min-height: 0; aspect-ratio: auto; }
+.wrap.fs .controls { flex: none; padding: 6px 12px 10px; }
+.wrap.fs .controls .ctl { padding-block: 10px; }
+@media (hover: hover) and (pointer: fine) { .wrap.fs .controls { display: none; } }
 .stage { border: 1px solid var(--line); background: var(--ink); overflow: hidden; user-select: none; -webkit-user-select: none; }
 .view { position: relative; aspect-ratio: 16 / 9; background: #000; touch-action: none; cursor: grab; }
 @media (max-width: 560px) { .view { aspect-ratio: 3 / 4; } }
@@ -167,6 +175,7 @@ h1 {
   <header>
     <h1>Kymlinge Station</h1>
     <p class="sub">Find the exit. Every moment you look away from it, it gets closer.</p>
+    <button class="ghost" id="fsBtn" type="button" aria-pressed="false">Full screen</button>
     <button class="ghost" id="soundBtn" type="button" aria-pressed="true">Sound on</button>
   </header>
 
@@ -210,8 +219,9 @@ Look at it to freeze it. Back away to win some distance.</p>
   <div class="controls">
     <button class="ctl" id="walkBtn" type="button">Hold to walk</button>
     <button class="ctl" id="blinkBtn" type="button">Hold to blink</button>
+    <button class="ctl" id="sprintBtn" type="button">Sprint (once)</button>
   </div>
-  <p class="hint">Move: W A S D or arrow keys. Look: drag the view. Blink: hold Space. On a touch screen, hold Walk, hold Blink, and drag the view to look.</p>
+  <p class="hint">Move: W A S D or arrow keys. Look: drag the view. Blink: hold Space. Sprint: Shift, once per run, 3 seconds. Full screen: F. On a touch screen, hold Walk, hold Blink, and drag the view to look.</p>
 </main>
 
 <script>
@@ -229,7 +239,7 @@ Look at it to freeze it. Back away to win some distance.</p>
     level: $("levelLabel"), best: $("bestLabel"),
     status: $("status"), statusText: $("statusText"),
     fill: $("strainFill"), gapFill: $("gapFill"), sMeter: $("strainMeter"), gMeter: $("gapMeter"),
-    walkBtn: $("walkBtn"), blinkBtn: $("blinkBtn"), soundBtn: $("soundBtn"),
+    sprintBtn: $("sprintBtn"), walkBtn: $("walkBtn"), blinkBtn: $("blinkBtn"), soundBtn: $("soundBtn"), fsBtn: $("fsBtn"),
     dir: $("dir"), dirArrow: $("dirArrow"),
     choices: $("choices"), leaveBtn: $("leaveBtn"), huntBtn: $("huntBtn")
   };
@@ -253,7 +263,7 @@ Look at it to freeze it. Back away to win some distance.</p>
   el.gl.appendChild(renderer.domElement);
 
   var scene = new THREE.Scene();
-  scene.fog = new THREE.FogExp2(0x020302, 0.105);
+  scene.fog = new THREE.FogExp2(0x030504, 0.125);
   var camera = new THREE.PerspectiveCamera(72, 16 / 9, 0.1, 60);
   camera.rotation.order = "YXZ";
   scene.add(camera);
@@ -367,7 +377,9 @@ Look at it to freeze it. Back away to win some distance.</p>
   function graffitiTexture(txt, col) {
     return canvasTex(256, 96, function (c, w, h) {
       c.clearRect(0, 0, w, h);
-      c.font = "bold 46px 'Archivo Narrow', Impact, Arial"; c.textAlign = "center"; c.textBaseline = "middle";
+      var fs = 46; c.font = "bold " + fs + "px 'Archivo Narrow', Impact, Arial";
+      while (c.measureText(txt).width > w - 24 && fs > 18) { fs -= 2; c.font = "bold " + fs + "px 'Archivo Narrow', Impact, Arial"; }
+      c.textAlign = "center"; c.textBaseline = "middle";
       c.translate(w / 2, h / 2); c.rotate(-0.06);
       c.fillStyle = col; c.shadowColor = col; c.shadowBlur = 5;
       c.fillText(txt, 0, 0);
@@ -489,7 +501,7 @@ Look at it to freeze it. Back away to win some distance.</p>
   }
 
   /* ---------- Language that goes wrong ---------- */
-  var NAMES = ["T-Centralen", "Slussen", "Gamla stan", "Hötorget", "Rådhuset", "Fridhemsplan", "Odenplan", "Mariatorget", "Hornstull", "Stadion", "Östermalmstorg", "Zinkensdamm"];
+  var NAMES = ["Kymlinge"];
   function corrupt(s, p) {
     if (p <= 0) return s;
     var junk = "ÅÄÖØÞXZ#?", out = "";
@@ -538,6 +550,18 @@ Look at it to freeze it. Back away to win some distance.</p>
     gr.addColorStop(0, "rgba(255,255,255,1)"); gr.addColorStop(0.3, "rgba(210,235,255,0.45)"); gr.addColorStop(1, "rgba(160,200,255,0)");
     g.fillStyle = gr; g.fillRect(0, 0, 64, 64);
     return new THREE.CanvasTexture(c);
+  }
+  // Mottled smoke puff: a few overlapping soft blobs, so no two clouds look like a clean glow.
+  var _fogTex = null;
+  function fogTex() {
+    if (_fogTex) return _fogTex;
+    var c = document.createElement("canvas"); c.width = c.height = 128; var g = c.getContext("2d");
+    for (var i = 0; i < 9; i++) {
+      var x = 30 + Math.random() * 68, y = 30 + Math.random() * 68, r = 28 + Math.random() * 30, gr = g.createRadialGradient(x, y, 0, x, y, r);
+      gr.addColorStop(0, "rgba(255,255,255,0.32)"); gr.addColorStop(1, "rgba(255,255,255,0)");
+      g.fillStyle = gr; g.fillRect(0, 0, 128, 128);
+    }
+    _fogTex = new THREE.CanvasTexture(c); return _fogTex;
   }
   var eyeHaloMat = new THREE.SpriteMaterial({ map: whiteGlowTex(), blending: THREE.AdditiveBlending, depthWrite: false, transparent: true, fog: false });
   var skinMat = inkMat, coatMat = inkMat, voidMat = inkDeepMat, glareMat = eyeWhiteMat;   // names used elsewhere
@@ -632,8 +656,6 @@ Look at it to freeze it. Back away to win some distance.</p>
       var glow = new THREE.Sprite(eyeHaloMat);
       glow.scale.set(0.2, 0.2, 1); glow.position.copy(core.position); head.add(glow);
     });
-    var mouth = new THREE.Mesh(new THREE.PlaneGeometry(0.18, 0.09), new THREE.MeshBasicMaterial({ map: grinTex(), transparent: true, depthWrite: false, fog: false, opacity: 0.9 }));
-    mouth.position.set(0.004, EYE_Y - 0.075, EYE_Z + 0.014); mouth.rotation.z = 0.12; head.add(mouth);
   }
   function makeRig() {
     var root = THREE.SkeletonUtils ? THREE.SkeletonUtils.clone(MODEL.src) : MODEL.src.clone(true);
@@ -642,14 +664,10 @@ Look at it to freeze it. Back away to win some distance.</p>
     addEyes(root);
     var aura = buildAura(); root.add(aura.g);
     var mixer = new THREE.AnimationMixer(root);
-    var walk = mixer.clipAction(MODEL.clips.walk), run = mixer.clipAction(MODEL.clips.run);
-    // No stride cycle: hold the clip on one frame and pose the arms by hand, so it glides with its arms out.
-    walk.timeScale = 0; run.timeScale = 0; walk.time = 0.2; walk.play(); run.play();
-    walk.setEffectiveWeight(1); run.setEffectiveWeight(0);
-    var bn = {}; root.traverse(function (o) { if (o.isBone) bn[o.name] = o; });
-    var rig = { root: root, mixer: mixer, walk: walk, run: run, w: 0, wantRun: false, bones: bn, aura: aura, t: Math.random() * 20 };
+    // The design pose: arms spread wide, body upright, tendrils hanging. Every frame starts from the bind pose.
+    var bn = {}, skins = []; root.traverse(function (o) { if (o.isBone) bn[o.name] = o; if (o.isSkinnedMesh) skins.push(o); });
+    var rig = { root: root, mixer: mixer, w: 0, wantRun: false, bones: bn, skins: skins, aura: aura, t: Math.random() * 20 };
     updateRig(rig, Math.random() * 6, false);
-    if (bn.Head) rig.headBase = bn.Head.quaternion.clone();
     return rig;
   }
   // Advance the skeleton. Not calling this is what freezes the monster in its current pose.
@@ -681,52 +699,36 @@ Look at it to freeze it. Back away to win some distance.</p>
     H.parent.getWorldQuaternion(_q3); _q3.invert(); _q2.premultiply(_q3);
     H.quaternion.copy(_q2); H.updateMatrixWorld(true);
   }
-  // Floating and reaching: no walk cycle. The body hovers and sways slowly, both arms reach toward you.
+  // Floating, in the model's own pose: it hovers and sways a little, arms spread, never running.
   function updateRig(rig, dt, wantRun) {
     rig.t += dt;
-    var t = rig.t, B = rig.bones, root = rig.root, reach = wantRun ? 1 : 0.8;
-    rig.mixer.update(0);
+    var t = rig.t, B = rig.bones, root = rig.root;
+    for (var i = 0; i < rig.skins.length; i++) rig.skins[i].skeleton.pose();
     root.position.y = 0.16 + 0.06 * Math.sin(t * 1.5);
-    if (B.Spine) B.Spine.rotation.x += 0.12 + 0.03 * Math.sin(t * 1.1);
-    if (B.LeftLeg) B.LeftLeg.rotation.x += 0.12 * Math.sin(t * 1.3);
-    if (B.RightLeg) B.RightLeg.rotation.x += 0.12 * Math.sin(t * 1.3 + 1.7);
-    root.updateMatrixWorld(true);
-    root.getWorldQuaternion(_rq);
-    [["Left", 1], ["Right", -1]].forEach(function (sd) {
-      var n = sd[0], sg = sd[1], ph = sg > 0 ? 0 : 2.1;
-      var up = 0.12 + 0.09 * Math.sin(t * 1.2 + ph), side = sg * (0.16 + 0.05 * Math.sin(t * 0.9 + ph));
-      _dir.set(side, up, 1).normalize().applyQuaternion(_rq);
-      aimBone(B[n + "Arm"], B[n + "ForeArm"], _dir.clone());
-      _dir.set(side * 0.7, up * 0.8 + 0.04, 1).normalize().applyQuaternion(_rq);
-      aimBone(B[n + "ForeArm"], B[n + "Hand"], _dir.clone());
-      aimBone(B[n + "Hand"], B[n + "HandMiddle1"], _dir.clone());
-    });
+    root.rotation.z = 0.025 * Math.sin(t * 0.9);
+    if (B.Spine) B.Spine.rotation.x += 0.03 * Math.sin(t * 1.1);
+    if (B.LeftArm) B.LeftArm.rotation.z += 0.05 * Math.sin(t * 1.2);
+    if (B.RightArm) B.RightArm.rotation.z -= 0.05 * Math.sin(t * 1.2 + 0.8);
+    if (B.LeftLeg) B.LeftLeg.rotation.x += 0.1 * Math.sin(t * 1.3);
+    if (B.RightLeg) B.RightLeg.rotation.x += 0.1 * Math.sin(t * 1.3 + 1.7);
     root.updateMatrixWorld(true);
   }
   // Dark energy: a cold violet-teal rim glow behind the body plus wisps that rise and curl off it.
   var auraMat = null, wispMat = null;
   function buildAura() {
-    if (!auraMat) {
-      auraMat = new THREE.SpriteMaterial({ map: whiteGlowTex(), color: 0x2c2058, blending: THREE.AdditiveBlending, depthWrite: false, transparent: true, opacity: 0.45, fog: false });
-      wispMat = new THREE.SpriteMaterial({ map: whiteGlowTex(), color: 0x2a2446, blending: THREE.AdditiveBlending, depthWrite: false, transparent: true, opacity: 0.16, fog: false });
-    }
-    var g = new THREE.Group(), core = new THREE.Sprite(auraMat);
-    core.scale.set(3.2, 3.6, 1); core.position.set(0, 0.95, -0.08); g.add(core);
-    var wisps = [];
-    for (var i = 0; i < 16; i++) {
+    if (!wispMat) wispMat = new THREE.SpriteMaterial({ map: fogTex(), color: 0x000000, depthWrite: false, transparent: true, opacity: 0.32, fog: true });
+    var g = new THREE.Group(), wisps = [];
+    for (var i = 0; i < 22; i++) {
       var w = new THREE.Sprite(wispMat); g.add(w);
-      wisps.push({ s: w, ph: Math.random(), a: Math.random() * 6.28, r: 0.25 + Math.random() * 0.45, sp: 0.07 + Math.random() * 0.1, sz: 1.1 + Math.random() * 0.9 });
+      wisps.push({ s: w, ph: Math.random(), a: Math.random() * 6.28, r: 0.2 + Math.random() * 0.55, sp: 0.05 + Math.random() * 0.08, sz: 0.9 + Math.random() * 0.9 });
     }
-    return { g: g, core: core, wisps: wisps };
+    return { g: g, core: null, wisps: wisps };
   }
   function animAura(a, t, run) {
-    a.core.material.opacity = 0.45; 
-    var pulse = 1 + 0.12 * Math.sin(t * 3.1) + 0.06 * Math.sin(t * 7.3);
-    a.core.scale.set(3.2 * pulse, 3.6 * pulse, 1);
     for (var i = 0; i < a.wisps.length; i++) {
       var w = a.wisps[i], k = (w.ph + t * w.sp * (1 + run * 0.8)) % 1, ang = w.a + t * 0.9 + k * 4;
-      w.s.position.set(Math.cos(ang) * w.r * (1 - k * 0.4), 0.05 + k * 2.1, Math.sin(ang) * w.r * 0.7 * (1 - k * 0.4));
-      var sz = w.sz * (0.7 + k * 0.6); w.s.scale.set(sz, sz * 1.1, 1);
+      w.s.position.set(Math.cos(ang) * w.r, 0.1 + k * 1.7, Math.sin(ang) * w.r * 0.8);
+      var sz = w.sz * (0.75 + k * 0.5); w.s.scale.set(sz, sz, 1);
     }
   }
   function b64buf(str) {
@@ -758,6 +760,7 @@ Look at it to freeze it. Back away to win some distance.</p>
   var level = 1, best = 0;
   try { best = parseInt(localStorage.getItem("sista-best-3d") || "0", 10) || 0; } catch (e) {}
   var gw = 0, gh = 0, grid = [], levelGroup = null, lightSrc = [], exitPos = { x: 0, z: 0 };
+  var railHall = null, trainSet = {};
   var spawn = { x: 0, z: 0 }, startPos = { x: 0, z: 0 }, texKeep = [];
   var DIRS = [[1, 0], [-1, 0], [0, 1], [0, -1]];
 
@@ -784,6 +787,293 @@ Look at it to freeze it. Back away to win some distance.</p>
   function disposeGroup(g) {
     g.traverse(function (o) { if (o.geometry) o.geometry.dispose(); });
     scene.remove(g);
+  }
+
+
+  /* ---------- Set pieces: the railway hall and the stairs to a boarded-up exit ---------- */
+  var ballastMat = new THREE.MeshStandardMaterial({ color: 0x1f1d1b, roughness: 1 });
+  var railMat = new THREE.MeshStandardMaterial({ color: 0x8d9190, metalness: 0.9, roughness: 0.32 });
+  var sleeperMat = new THREE.MeshStandardMaterial({ color: 0x2b2018, roughness: 1 });
+  var trainMat = new THREE.MeshStandardMaterial({ color: 0xaab4b8, metalness: 0.75, roughness: 0.36, emissive: 0x0b1114 });
+  var trainDark = new THREE.MeshStandardMaterial({ color: 0x15191b, metalness: 0.5, roughness: 0.6 });
+  var glassMat = new THREE.MeshStandardMaterial({ color: 0x050a0c, metalness: 0.9, roughness: 0.06, emissive: 0x0a1c24 });
+  var edgeMat = new THREE.MeshStandardMaterial({ color: 0xb59a16, roughness: 0.8, emissive: 0x241e02 });
+  var tunnelMat = new THREE.MeshBasicMaterial({ color: 0x000000 });
+  var cageMat = new THREE.MeshBasicMaterial({ color: 0x0c0c0c, wireframe: true });
+  var warmLampMat = new THREE.MeshBasicMaterial({ color: 0xffb36a });
+  var warmGlowMat = new THREE.SpriteMaterial({ map: whiteGlowTex(), color: 0xff9a4a, blending: THREE.AdditiveBlending, depthWrite: false, transparent: true, opacity: 0.55, fog: false });
+  function addBox(g, mat, w, h, d, x, y, z, ry) { var m = new THREE.Mesh(boxGeo, mat); m.scale.set(w, h, d); m.position.set(x, y, z); if (ry) m.rotation.y = ry; g.add(m); return m; }
+  function tapeTexture() {
+    return canvasTex(128, 16, function (c, w, h) {
+      c.fillStyle = "#d4b414"; c.fillRect(0, 0, w, h); c.fillStyle = "#111";
+      for (var i = -2; i < 12; i++) { c.beginPath(); c.moveTo(i * 16, h); c.lineTo(i * 16 + 8, h); c.lineTo(i * 16 + 16, 0); c.lineTo(i * 16 + 8, 0); c.fill(); }
+    });
+  }
+
+  /* ---------- Wake-up: a bench on the platform, the track, the Kymlinge sign ---------- */
+  var wake = { t: 99, grace: 0, hot: false }, startBench = null;
+  var benchMat = new THREE.MeshStandardMaterial({ color: 0x2a2f2e, roughness: 0.5, metalness: 0.6 });
+  function addStartPlatform() {
+    var cyy = Math.floor(gh / 2), zc = (cyy + 0.5) * CELL, zA = (cyy - 2) * CELL, zB = (cyy + 3) * CELL, L = zB - zA, g = new THREE.Group(), z;
+    var tx = 4.5;
+    var bed = new THREE.Mesh(new THREE.PlaneGeometry(CELL, L), ballastMat); bed.rotation.x = -Math.PI / 2; bed.position.set(tx, 0.012, zc); g.add(bed);
+    for (z = zA + 0.4; z < zB; z += 0.72) addBox(g, sleeperMat, 2.5, 0.09, 0.22, tx, 0.06, z);
+    [-0.72, 0.72].forEach(function (o) { addBox(g, railMat, 0.07, 0.09, L, tx + o, 0.14, zc); });
+    addBox(g, edgeMat, 0.2, 0.012, L, 5.78, 0.02, zc);
+    addBox(g, wallMat, 0.3, 0.16, L, 6.0, 0.08, zc);
+    [[zA + 0.02, 0], [zB - 0.02, Math.PI]].forEach(function (e) {
+      var tm = new THREE.Mesh(new THREE.PlaneGeometry(CELL * 0.92, 2.7), tunnelMat); tm.position.set(tx, 1.35, e[0]); tm.rotation.y = e[1]; g.add(tm);
+    });
+    var pt = plateTexture("Kymlinge"); texKeep.push(pt);
+    var big = new THREE.Mesh(new THREE.PlaneGeometry(3.4, 1.06), new THREE.MeshStandardMaterial({ map: pt, roughness: 0.8, emissive: 0x15201a }));
+    big.position.set(3.03, 1.9, zc); big.rotation.y = Math.PI / 2; g.add(big);
+    var pt2 = plateTexture("Kymlinge"); texKeep.push(pt2);
+    var hang = new THREE.Mesh(new THREE.PlaneGeometry(2.2, 0.69), new THREE.MeshStandardMaterial({ map: pt2, roughness: 0.8, emissive: 0x15201a, side: THREE.DoubleSide }));
+    hang.position.set(5.2, 2.75, zc); hang.rotation.y = Math.PI / 2; g.add(hang);
+    [-0.9, 0.9].forEach(function (o) { addBox(g, benchMat, 0.03, 0.45, 0.03, 5.2, 3.0, zc + o); });
+    // the bench you wake on, facing the track
+    var bx = 7.4;
+    addBox(g, benchMat, 0.5, 0.06, 1.8, bx, 0.46, zc);
+    addBox(g, benchMat, 0.06, 0.5, 1.8, bx + 0.27, 0.72, zc);
+    [-0.8, 0.8].forEach(function (o) { addBox(g, benchMat, 0.06, 0.45, 0.4, bx, 0.22, zc + o); });
+    blockers.push({ x0: 3.0, x1: 5.95, z0: zA, z1: zB });
+    blockers.push({ x0: bx - 0.35, x1: bx + 0.45, z0: zc - 1.0, z1: zc + 1.0 });
+    lightSrc.push({ x: 5.0, y: 2.7, z: zc, c: 0xcfe6df, k: 1.5, dist: 11, tube: true });
+    startBench = { x: bx, z: zc };
+    levelGroup.add(g);
+  }
+
+  function addRailway() {
+    if (!railHall) return;
+    var h = railHall, X0 = h.xa * CELL, X1 = (h.xb + 1) * CELL, zc = (h.z0 + 1.5) * CELL, L = X1 - X0, g = new THREE.Group(), x;
+    var bed = new THREE.Mesh(new THREE.PlaneGeometry(L, CELL), ballastMat); bed.rotation.x = -Math.PI / 2; bed.position.set(X0 + L / 2, 0.012, zc); g.add(bed);
+    for (x = X0 + 0.4; x < X1; x += 0.72) addBox(g, sleeperMat, 0.22, 0.09, 2.5, x, 0.06, zc);
+    [-0.72, 0.72].forEach(function (o) { addBox(g, railMat, L, 0.09, 0.07, X0 + L / 2, 0.14, zc + o); });
+    [-1, 1].forEach(function (sd) { addBox(g, edgeMat, L, 0.012, 0.18, X0 + L / 2, 0.02, zc + sd * (CELL / 2 - 0.12)); });
+    // the train, parked: silver, silent, windows dark
+    var tx0 = (h.xa + 2) * CELL, tx1 = (h.xb - 1) * CELL, tl = tx1 - tx0, tc = (tx0 + tx1) / 2;
+    addBox(g, trainMat, tl, 2.75, 2.6, tc, 1.62, zc);
+    addBox(g, trainDark, tl + 0.02, 0.35, 2.64, tc, 0.28, zc);
+    addBox(g, trainDark, tl + 0.02, 0.12, 2.64, tc, 3.02, zc);
+    [-1, 1].forEach(function (sd) {
+      addBox(g, glassMat, tl - 0.8, 0.9, 0.04, tc, 2.0, zc + sd * 1.31);
+      for (var dxm = tx0 + 3; dxm < tx1 - 1; dxm += 4.5) addBox(g, trainDark, 0.07, 2.2, 0.05, dxm, 1.5, zc + sd * 1.31);
+    });
+    [[tx0 - 0.02, -1], [tx1 + 0.02, 1]].forEach(function (e) {
+      addBox(g, glassMat, 0.04, 0.85, 1.9, e[0], 2.1, zc);
+      [-0.8, 0.8].forEach(function (o) {
+        var hl = new THREE.Mesh(boxGeo, new THREE.MeshBasicMaterial({ color: 0xdfeaff })); hl.scale.set(0.05, 0.14, 0.3); hl.position.set(e[0] + e[1] * 0.02, 0.85, zc + o); g.add(hl);
+      });
+      var gl = new THREE.Sprite(tubeGlowMat); gl.scale.set(3.2, 1.6, 1); gl.position.set(e[0] + e[1] * 0.4, 0.9, zc); g.add(gl);
+      lightSrc.push({ x: e[0] + e[1] * 1.6, y: 1.2, z: zc, c: 0xdfeaff, k: 1.1, dist: 9 });
+    });
+    // tunnel mouths at both ends of the track
+    [[X0 + 0.02, 1], [X1 - 0.02, -1]].forEach(function (e) {
+      var tm = new THREE.Mesh(new THREE.PlaneGeometry(CELL * 0.92, 2.7), tunnelMat); tm.position.set(e[0], 1.35, zc); tm.rotation.y = e[1] > 0 ? Math.PI / 2 : -Math.PI / 2; g.add(tm);
+    });
+    // concrete pillars on the platforms (they block you)
+    [h.z0 + 0.5, h.z0 + 2.5].forEach(function (zr, ip) {
+      for (var xp = tx0 + 1.5; xp < tx1 - 1; xp += 6) {
+        var pz2 = ip === 0 ? zr * CELL - CELL / 2 + 0.55 : zr * CELL + CELL / 2 - 0.55;
+        addBox(g, wallMat, 0.75, WALL_H, 0.75, xp, WALL_H / 2, pz2);
+        blockers.push({ x0: xp - 0.4, x1: xp + 0.4, z0: pz2 - 0.4, z1: pz2 + 0.4 });
+      }
+    });
+    levelGroup.add(g);
+  }
+  var stairInfo = [];
+  function addStairs(b0, exit) {
+    stairInfo = [];
+    var cand = [], z, x, k;
+    for (z = 1; z < gh - 1; z++) for (x = 7; x < gw - 1; x++) {
+      if (grid[z][x] !== 0 || trainSet[z * 1000 + x]) continue;
+      if (railHall && x >= railHall.xa - 1 && x <= railHall.xb + 1 && z >= railHall.z0 - 1 && z <= railHall.z0 + 3) continue;
+      if ((x === exit[0] && z === exit[1]) || b0.d[z][x] < 4) continue;
+      if (Math.hypot((x + 0.5) * CELL - spawn.x, (z + 0.5) * CELL - spawn.z) < 1) continue;
+      var open = 0, od = null;
+      for (k = 0; k < 4; k++) { if (grid[z + DIRS[k][1]][x + DIRS[k][0]] === 0) { open++; od = DIRS[k]; } }
+      if (open === 1) cand.push({ x: x, z: z, d: [-od[0], -od[1]] });
+    }
+    for (var i = cand.length - 1; i > 0; i--) { var j = Math.floor(Math.random() * (i + 1)), t = cand[i]; cand[i] = cand[j]; cand[j] = t; }
+    var n = Math.min(cand.length, level >= 4 ? 3 : (level >= 2 ? 2 : 1));
+    for (i = 0; i < n; i++) {
+      var c = cand[i], dx = c.d[0], dz = c.d[1], cx = (c.x + 0.5) * CELL, cz = (c.z + 0.5) * CELL, g = new THREE.Group();
+      g.position.set(cx, 0, cz); g.rotation.y = Math.atan2(dx, dz);
+      for (k = 0; k < 6; k++) addBox(g, wallMat, 2.3, 0.17 * (k + 1), 0.2, 0, 0.17 * (k + 1) / 2, 0.4 + 0.2 * k);
+      [-1.05, 1.05].forEach(function (sx2) {
+        var rl = addBox(g, trainDark, 0.05, 0.05, 1.6, sx2, 1.1, 0.95); rl.rotation.x = -0.72;
+        [0.5, 1.0, 1.45].forEach(function (zp) { addBox(g, trainDark, 0.05, 1.0 + (zp - 0.4) * 0.8, 0.05, sx2, 0.5 + (zp - 0.4) * 0.4, zp); });
+      });
+      var dm = new THREE.Mesh(new THREE.PlaneGeometry(1.5, 2.05), new THREE.MeshStandardMaterial({ map: doorTex, roughness: 0.6, metalness: 0.3 }));
+      dm.position.set(0, 1.02 + 1.025, CELL / 2 - 0.03); dm.rotation.y = Math.PI; g.add(dm);
+      var wood = [1.3, 1.72, 2.14, 2.56];
+      wood.forEach(function (wy, wi) { var pl = addBox(g, woodMat2, 1.95, 0.17, 0.04, (Math.random() - 0.5) * 0.1, wy + 1.0, CELL / 2 - 0.08); pl.rotation.z = (Math.random() - 0.5) * 0.12; });
+      var tp = tapeTexture(); texKeep.push(tp);
+      var tape = new THREE.Mesh(new THREE.PlaneGeometry(2.2, 0.14), new THREE.MeshStandardMaterial({ map: tp, roughness: 0.7 }));
+      tape.position.set(0, 2.5, CELL / 2 - 0.115); tape.rotation.y = Math.PI; tape.rotation.z = 0.5; g.add(tape);
+      var sgt = graffitiTexture("STÄNGD", "#d9d6cf"); texKeep.push(sgt);
+      var sgm = new THREE.Mesh(new THREE.PlaneGeometry(1.2, 0.45), new THREE.MeshStandardMaterial({ map: sgt, transparent: true, roughness: 1, depthWrite: false }));
+      sgm.position.set(0, 2.2 + 0.55, CELL / 2 - 0.125); sgm.rotation.y = Math.PI; g.add(sgm);
+      var lamp = new THREE.Mesh(new THREE.SphereGeometry(0.09, 8, 6), warmLampMat); lamp.position.set(0, 2.85, 1.1); g.add(lamp);
+      var cage = new THREE.Mesh(new THREE.SphereGeometry(0.16, 8, 6), cageMat); cage.position.copy(lamp.position); g.add(cage);
+      var wg = new THREE.Sprite(warmGlowMat); wg.scale.set(1.8, 1.8, 1); wg.position.copy(lamp.position); g.add(wg);
+      lightSrc.push({ x: cx + dx * 1.1, y: 2.85, z: cz + dz * 1.1, c: 0xff9a4a, k: 1.5, dist: 9 });
+      levelGroup.add(g); stairInfo.push({ x: cx, z: cz, dx: dx, dz: dz });
+      var bx = dx !== 0 ? [cx + (dx > 0 ? 0.3 : -1.5), cx + (dx > 0 ? 1.5 : -0.3)] : [cx - 1.5, cx + 1.5];
+      var bz = dz !== 0 ? [cz + (dz > 0 ? 0.3 : -1.5), cz + (dz > 0 ? 1.5 : -0.3)] : [cz - 1.5, cz + 1.5];
+      blockers.push({ x0: bx[0], x1: bx[1], z0: bz[0], z1: bz[1] });
+    }
+  }
+
+
+  /* ---------- The way out: Stockholm at night ---------- */
+  var CITY_X = 500, cityGroup = null, cityMode = false, cityT = 0, camY = 0, cityLamps = [], cityBlink = [], cityStepT = 0;
+  function facadeTexture(base, litP) {
+    return canvasTex(128, 256, function (c, w, h) {
+      c.fillStyle = base; c.fillRect(0, 0, w, h);
+      for (var i = 0; i < 900; i++) { c.fillStyle = "rgba(0,0,0," + (Math.random() * 0.18) + ")"; c.fillRect(Math.random() * w, Math.random() * h, 2 + Math.random() * 5, 1 + Math.random() * 3); }
+      var cols = 4, rows = 9, cw = w / cols, ch = h / rows;
+      for (var r = 1; r < rows; r++) for (var q = 0; q < cols; q++) {
+        var lit = Math.random() < litP;
+        c.fillStyle = lit ? "rgba(255,214,130,0.95)" : "rgba(8,12,16,0.92)";
+        c.fillRect(q * cw + cw * 0.22, r * ch + ch * 0.14, cw * 0.56, ch * 0.62);
+        c.fillStyle = "rgba(0,0,0,0.5)"; c.fillRect(q * cw + cw * 0.48, r * ch + ch * 0.14, 2, ch * 0.62);
+      }
+      c.fillStyle = "rgba(0,0,0,0.35)"; c.fillRect(0, h - ch * 1.05, w, ch * 1.05);
+    });
+  }
+  function neonTexture(txt, col) {
+    return canvasTex(256, 96, function (c, w, h) {
+      c.clearRect(0, 0, w, h); c.fillStyle = "rgba(8,10,12,0.9)"; c.fillRect(6, 10, w - 12, h - 20);
+      c.strokeStyle = col; c.lineWidth = 3; c.strokeRect(10, 14, w - 20, h - 28);
+      var fs = 46; c.font = "700 " + fs + "px 'Archivo Narrow', Impact, Arial";
+      while (c.measureText(txt).width > w - 40 && fs > 16) { fs -= 2; c.font = "700 " + fs + "px 'Archivo Narrow', Impact, Arial"; }
+      c.textAlign = "center"; c.textBaseline = "middle"; c.shadowColor = col; c.shadowBlur = 12; c.fillStyle = col; c.fillText(txt, w / 2, h / 2 + 2);
+    });
+  }
+  function tSignTexture() {
+    return canvasTex(256, 256, function (c, w, h) {
+      c.fillStyle = "#0b4fa8"; c.fillRect(0, 0, w, h); c.strokeStyle = "#e9f1ff"; c.lineWidth = 8; c.strokeRect(10, 10, w - 20, h - 20);
+      c.fillStyle = "#e9f1ff"; c.font = "700 190px Arial, sans-serif"; c.textAlign = "center"; c.textBaseline = "middle"; c.fillText("T", w / 2, h / 2 + 8);
+    });
+  }
+  function buildCity() {
+    if (cityGroup) return;
+    var g = new THREE.Group(); g.position.set(CITY_X, 0, 0); cityGroup = g; cityLamps = []; cityBlink = [];
+    var Z0 = 10, Z1 = -120, LEN = Z0 - Z1, zmid = (Z0 + Z1) / 2, i, z;
+    var asphalt = new THREE.MeshStandardMaterial({ color: 0x15181b, roughness: 0.32, metalness: 0.25 });
+    var concrete = new THREE.MeshStandardMaterial({ color: 0x3a3d3e, roughness: 0.9 });
+    var darkWall = new THREE.MeshStandardMaterial({ color: 0x1a1d20, roughness: 1 });
+    var road = new THREE.Mesh(new THREE.PlaneGeometry(13, LEN - 9), asphalt); road.rotation.x = -Math.PI / 2; road.position.set(0, 0, (1 + Z1) / 2); g.add(road);
+    [-1, 1].forEach(function (sd) {
+      addBox(g, concrete, 3.2, 0.16, LEN - 9, sd * 8.1, 0.08, (1 + Z1) / 2);
+      addBox(g, concrete, 0.2, 0.2, LEN - 9, sd * 6.6, 0.1, (1 + Z1) / 2);
+    });
+    for (z = -4; z > Z1 + 4; z -= 7) addBox(g, new THREE.MeshBasicMaterial({ color: 0x8c8f8f }), 0.2, 0.01, 2.2, 0, 0.02, z);
+    for (i = 0; i < 8; i++) addBox(g, new THREE.MeshBasicMaterial({ color: 0x9a9d9d }), 0.7, 0.01, 3.4, -5.2 + i * 1.5, 0.02, -34);
+    // station entrance: a stairwell going down, under a concrete canopy with the blue T
+    var wallM = wallMat;
+    [-1, 1].forEach(function (sd) { addBox(g, wallM, 0.5, 6.0, 9.2, sd * 2.45, -0.4, 5.6); });
+    addBox(g, wallM, 5.4, 0.5, 9.2, 0, 3.3, 5.6);
+    addBox(g, wallM, 5.4, 6.0, 0.5, 0, -0.1, 10.2);
+    var stairM = new THREE.MeshStandardMaterial({ color: 0x55585a, roughness: 0.85 });
+    for (i = 0; i < 12; i++) { var sy = -2.4 + 0.2 * (i + 1); addBox(g, stairM, 4.4, sy + 2.6, 0.7, 0, (sy - 2.6) / 2 + 0.0, 8.8 - i * 0.7 + 0.35 - 0.35); }
+    var floorIn = new THREE.Mesh(new THREE.PlaneGeometry(4.4, 9.2), asphalt); floorIn.rotation.x = -Math.PI / 2; floorIn.position.set(0, -2.45, 5.6); g.add(floorIn);
+    var tTex = tSignTexture(); var tSign = new THREE.Mesh(new THREE.PlaneGeometry(1.5, 1.5), new THREE.MeshBasicMaterial({ map: tTex })); tSign.position.set(0, 4.3, 1.15); tSign.rotation.y = 0; g.add(tSign);
+    var nameTex = neonTexture("KYMLINGE", "#e3efe8"); var nameSign = new THREE.Mesh(new THREE.PlaneGeometry(2.6, 0.97), new THREE.MeshBasicMaterial({ map: nameTex, transparent: true })); nameSign.position.set(0, 2.85, 1.12); g.add(nameSign);
+    var tGlow = new THREE.Sprite(tubeGlowMat); tGlow.scale.set(6, 4, 1); tGlow.position.set(0, 4.2, 1.5); g.add(tGlow);
+    cityLamps.push({ x: CITY_X, y: 3.0, z: 6.0, c: 0xcfe6ff, k: 1.4, dist: 11, tube: true });
+    cityLamps.push({ x: CITY_X, y: 2.6, z: 1.8, c: 0x8fb8ff, k: 1.2, dist: 12 });
+    // buildings along both sides
+    var pal = ["#8e6f36", "#7a3a2b", "#8b8468", "#4d5c68", "#6d5a3c", "#5d2f2a"], neon = [["APOTEK", "#3dff8a"], ["KAFÉ", "#ffb347"], ["HOTELL", "#6ad1ff"], ["STOCKHOLM", "#e3efe8"], ["BAR", "#ff6a9c"], ["KIOSK", "#ffd23d"]];
+    [-1, 1].forEach(function (sd) {
+      z = -2;
+      var nIdx = 0;
+      while (z > Z1) {
+        var bw = 9 + Math.random() * 6, bh = 14 + Math.random() * 14, bd = 12, bx = sd * (9.7 + bd / 2);
+        var ft = facadeTexture(pal[Math.floor(Math.random() * pal.length)], 0.12); ft.repeat.set(Math.round(bw / 3.2), Math.round(bh / 5)); texKeep.push(ft);
+        addBox(g, darkWall, bd, bh, bw, bx, bh / 2, z - bw / 2);
+        var fa = new THREE.Mesh(new THREE.PlaneGeometry(bw, bh), new THREE.MeshStandardMaterial({ map: ft, roughness: 0.9, emissive: 0x0a0a0a }));
+        fa.position.set(sd * 9.69, bh / 2, z - bw / 2); fa.rotation.y = sd > 0 ? -Math.PI / 2 : Math.PI / 2; g.add(fa);
+        addBox(g, darkWall, bd + 0.6, 0.5, bw + 0.4, bx, bh + 0.2, z - bw / 2);
+        if (Math.random() < 0.7) {
+          var nn = neon[(nIdx++ + (sd > 0 ? 2 : 0)) % neon.length], nt = neonTexture(nn[0], nn[1]);
+          var nm = new THREE.Mesh(new THREE.PlaneGeometry(2.4, 0.9), new THREE.MeshBasicMaterial({ map: nt, transparent: true }));
+          nm.position.set(sd * 9.62, 3.4, z - bw * 0.5); nm.rotation.y = sd > 0 ? -Math.PI / 2 : Math.PI / 2; g.add(nm);
+          var ng = new THREE.Sprite(new THREE.SpriteMaterial({ map: whiteGlowTex(), color: new THREE.Color(nn[1]), blending: THREE.AdditiveBlending, depthWrite: false, transparent: true, opacity: 0.4, fog: false }));
+          ng.scale.set(5, 3, 1); ng.position.set(sd * 9.2, 3.4, z - bw * 0.5); g.add(ng);
+          cityLamps.push({ x: CITY_X + sd * 8.6, y: 3.2, z: z - bw * 0.5, c: new THREE.Color(nn[1]).getHex(), k: 1.0, dist: 9 });
+        }
+        z -= bw + 0.2;
+      }
+    });
+    // street lamps, some dead
+    var poleM = new THREE.MeshStandardMaterial({ color: 0x1e2224, roughness: 0.6, metalness: 0.5 });
+    var lampM = new THREE.MeshBasicMaterial({ color: 0xffd9a0 });
+    var lampGlow = new THREE.SpriteMaterial({ map: whiteGlowTex(), color: 0xffc27a, blending: THREE.AdditiveBlending, depthWrite: false, transparent: true, opacity: 0.55, fog: false });
+    for (i = 0, z = -6; z > Z1 + 6; z -= 15, i++) {
+      [-1, 1].forEach(function (sd) {
+        var zz = z - (sd > 0 ? 7 : 0), dead = (i + (sd > 0 ? 1 : 0)) % 3 === 2;
+        addBox(g, poleM, 0.14, 5.6, 0.14, sd * 6.7, 2.8, zz);
+        addBox(g, poleM, 1.3, 0.1, 0.1, sd * 6.1, 5.6, zz);
+        var head = new THREE.Mesh(new THREE.SphereGeometry(0.2, 8, 6), dead ? darkWall : lampM); head.position.set(sd * 5.5, 5.5, zz); g.add(head);
+        if (!dead) {
+          var gl = new THREE.Sprite(lampGlow); gl.scale.set(4.2, 4.2, 1); gl.position.copy(head.position); g.add(gl);
+          cityLamps.push({ x: CITY_X + sd * 5.5, y: 5.3, z: zz, c: 0xffc27a, k: 2.4, dist: 18 });
+        }
+      });
+    }
+    // wrecked cars, a barrier, paper on the road
+    function car(cx, cz, ry, col, blink) {
+      var cg = new THREE.Group(), body = new THREE.MeshStandardMaterial({ color: col, roughness: 0.4, metalness: 0.6 });
+      addBox(cg, body, 4.2, 0.7, 1.8, 0, 0.6, 0); addBox(cg, body, 2.2, 0.6, 1.6, -0.2, 1.2, 0);
+      addBox(cg, glassMat, 2.25, 0.45, 1.62, -0.2, 1.22, 0);
+      [[-1.4, 0.9], [1.4, 0.9], [-1.4, -0.9], [1.4, -0.9]].forEach(function (w) { var wh = new THREE.Mesh(new THREE.CylinderGeometry(0.34, 0.34, 0.24, 10), trainDark); wh.rotation.x = Math.PI / 2; wh.position.set(w[0], 0.34, w[1]); cg.add(wh); });
+      cg.position.set(cx, 0, cz); cg.rotation.y = ry; cg.rotation.z = 0.04; g.add(cg);
+      if (blink) { var bs = new THREE.Sprite(new THREE.SpriteMaterial({ map: whiteGlowTex(), color: 0xffa020, blending: THREE.AdditiveBlending, depthWrite: false, transparent: true, opacity: 0.9, fog: false })); bs.scale.set(1.6, 1.6, 1); bs.position.set(cx + 1.9 * Math.cos(ry), 0.85, cz - 1.9 * Math.sin(ry)); g.add(bs); cityBlink.push(bs); cityLamps.push({ x: CITY_X + cx, y: 1.0, z: cz, c: 0xffa020, k: 1.0, dist: 7, blink: true }); }
+    }
+    car(2.6, -22, 0.35, 0x3b4048, true); car(-3.2, -44, -0.2, 0x5a2a28, false); car(1.5, -60, 1.2, 0x2f3b3d, false);
+    addBox(g, woodMat2, 3.4, 0.9, 0.12, -2.0, 0.6, -12, 0.2); [-1, 1].forEach(function (sd) { addBox(g, poleM, 0.1, 0.6, 0.1, -2.0 + sd * 1.5, 0.3, -12); });
+    for (i = 0; i < 40; i++) { var pp = new THREE.Mesh(new THREE.PlaneGeometry(0.35, 0.25), new THREE.MeshBasicMaterial({ color: 0x9a9a92 })); pp.rotation.x = -Math.PI / 2; pp.rotation.z = Math.random() * 6; pp.position.set((Math.random() - 0.5) * 11, 0.03, -2 - Math.random() * 90); g.add(pp); }
+    // sky: stars and a thin moon, outside the fog
+    var sp = [], sg = new THREE.BufferGeometry();
+    for (i = 0; i < 500; i++) { var th = Math.random() * 6.28, ph = Math.random() * 1.2 + 0.15, rr = 240; sp.push(Math.cos(th) * Math.cos(ph) * rr, Math.sin(ph) * rr, Math.sin(th) * Math.cos(ph) * rr - 60); }
+    sg.setAttribute("position", new THREE.Float32BufferAttribute(sp, 3));
+    g.add(new THREE.Points(sg, new THREE.PointsMaterial({ color: 0xcfd8e8, size: 1.4, sizeAttenuation: false, fog: false })));
+    var moon = new THREE.Sprite(new THREE.SpriteMaterial({ map: whiteGlowTex(), color: 0xdce8ff, blending: THREE.AdditiveBlending, depthWrite: false, transparent: true, fog: false }));
+    moon.scale.set(70, 70, 1); moon.position.set(-60, 120, -200); g.add(moon);
+    scene.add(g);
+  }
+  var _saved = null;
+  function enterCity() {
+    buildCity(); cityGroup.visible = true; if (levelGroup) levelGroup.visible = false;
+    scene.fog.color.setHex(0x0a1220); scene.fog.density = 0.017; renderer.setClearColor(0x050a14);
+    camera.far = 330; camera.updateProjectionMatrix();
+    ambLight.color.setHex(0x1b2638); ambLight.intensity = 0.9;
+    lightSrc = cityLamps; cityMode = true; cityT = 0; camY = -2.35; cityStepT = 0;
+    px = CITY_X; pz = 9.2; yaw = 0; pitch = 0.05;
+    ent.visible = true; ent.position.set(CITY_X + 0.5, 0, -68); ent.rotation.y = 0;
+    updateLights();
+  }
+  function leaveCity() {
+    if (!cityMode) return;
+    cityMode = false; camY = 0; if (cityGroup) cityGroup.visible = false; if (levelGroup) levelGroup.visible = true;
+    scene.fog.color.setHex(0x030504); scene.fog.density = 0.125; renderer.setClearColor(0x000000);
+    camera.far = 60; camera.updateProjectionMatrix(); ambLight.color.setHex(0x101614); ambLight.intensity = 0.4;
+  }
+  function cityStep(dt) {
+    cityT += dt;
+    var tt = cityT, sp = 3.0;
+    var z = 9.2 - Math.min(tt, 17.5) * sp * (tt < 17.5 ? 1 : 0) - (tt >= 17.5 ? 17.5 * sp : 0);
+    pz = Math.max(-46, z);
+    var stairH = pz > 1 ? -2.4 + (9.2 - pz) / 8.2 * 2.4 : 0;
+    camY = Math.min(0, stairH) + Math.sin(tt * 6) * (tt < 17.5 ? 0.035 : 0);
+    yaw = 0.07 * Math.sin(tt * 0.45) + (pz < 1 ? Math.min(0.2, (1 - pz) * 0.01) * Math.sin(tt * 0.3) : 0);
+    pitch = pz > 1 ? 0.12 : 0.05 * Math.sin(tt * 0.3);
+    cityStepT -= dt; if (cityStepT <= 0 && tt < 17.5) { footstep(1, 0); cityStepT = 0.55; }
+    cityBlink.forEach(function (b, bi) { b.material.opacity = (Math.sin(tt * 5 + bi) > 0.2) ? 0.9 : 0.08; });
+    lightT -= dt; if (lightT <= 0) { updateLights(); lightT = 0.12; }
+    updateRig(entRig || { t: 0, skins: [], bones: {}, root: ent, mixer: { update: function () {} } }, dt * 0.5, false);
   }
 
   function buildLevel(hunt) {
@@ -815,6 +1105,30 @@ Look at it to freeze it. Back away to win some distance.</p>
     var cy = Math.floor(gh / 2);
     for (z = Math.max(1, cy - 2); z <= Math.min(gh - 2, cy + 2); z++) for (x = 1; x <= 5; x++) grid[z][x] = 0;
     grid[cy - 1][3] = 1; grid[cy + 1][3] = 1;
+    // The railway hall: three cell rows opened up (platform, track, platform) with a parked train in the middle of the track row.
+    railHall = null; trainSet = {}; blockers = [];
+    (function () {
+      var xa = 7, xb = Math.min(gw - 2, xa + 8);
+      if (xb - xa < 6 || gh < 7) return;
+      var zs = []; for (var zq = 1; zq + 2 <= gh - 2; zq += 2) zs.push(zq);
+      var z0 = zs[Math.floor(Math.random() * zs.length)], zz, xx;
+      for (zz = z0; zz <= z0 + 2; zz++) for (xx = xa; xx <= xb; xx++) grid[zz][xx] = 0;
+      for (xx = xa + 2; xx <= xb - 2; xx++) { grid[z0 + 1][xx] = 1; trainSet[(z0 + 1) * 1000 + xx] = true; }
+      railHall = { xa: xa, xb: xb, z0: z0 };
+    })();
+    // Alcoves: a few wall cells are hollowed out into dead ends, where a stairway to a boarded-up exit will go.
+    (function () {
+      var want = level >= 4 ? 3 : (level >= 2 ? 2 : 1), tries = 0, got = 0;
+      while (got < want && tries++ < 400) {
+        var ax2 = 8 + Math.floor(Math.random() * Math.max(1, gw - 10)), az2 = 1 + Math.floor(Math.random() * (gh - 2));
+        if (ax2 > gw - 2 || grid[az2][ax2] !== 1) continue;
+        if (railHall && ax2 >= railHall.xa - 1 && ax2 <= railHall.xb + 1 && az2 >= railHall.z0 - 1 && az2 <= railHall.z0 + 3) continue;
+        var op = 0;
+        for (var k2 = 0; k2 < 4; k2++) { if (grid[az2 + DIRS[k2][1]][ax2 + DIRS[k2][0]] === 0) op++; }
+        if (op !== 1) continue;
+        grid[az2][ax2] = 0; got++;
+      }
+    })();
     var sx = 2, sz = cy;
     var b0 = bfs(sx, sz), exit = [sx, sz], maxD = 0;
     for (z = 0; z < gh; z++) for (x = 0; x < gw; x++) if (b0.d[z][x] > maxD) { maxD = b0.d[z][x]; exit = [x, z]; }
@@ -849,12 +1163,12 @@ Look at it to freeze it. Back away to win some distance.</p>
     if (levelGroup) disposeGroup(levelGroup);
     texKeep.forEach(function (t) { t.dispose(); }); texKeep = [];
     levelGroup = new THREE.Group(); scene.add(levelGroup);
-    lightSrc = [];
+    lightSrc = []; mist = [];
 
     // walls
     var wc = [];
     for (z = 0; z < gh; z++) for (x = 0; x < gw; x++) {
-      if (grid[z][x] !== 1) continue;
+      if (grid[z][x] !== 1 || trainSet[z * 1000 + x]) continue;
       for (i = 0; i < 4; i++) {
         var ax = x + DIRS[i][0], az = z + DIRS[i][1];
         if (ax >= 0 && az >= 0 && ax < gw && az < gh && grid[az][ax] === 0) { wc.push([x, z]); break; }
@@ -916,10 +1230,46 @@ Look at it to freeze it. Back away to win some distance.</p>
     lightSrc.push({ x: exitPos.x, y: 2.2, z: exitPos.z });
     }
 
+    addRailway(); addStairs(b0, exit); addStartPlatform();
+
+    // Resident Evil style clutter: rusty drums, crates, bin bags, a caged work lamp in the corners.
+    (function () {
+      var drumM = new THREE.MeshStandardMaterial({ color: 0x3b4a3e, roughness: 0.55, metalness: 0.5 });
+      var rustM = new THREE.MeshStandardMaterial({ color: 0x5a3320, roughness: 0.8, metalness: 0.4 });
+      var bagM = new THREE.MeshStandardMaterial({ color: 0x0c0d0d, roughness: 0.35 });
+      var crateM = new THREE.MeshStandardMaterial({ color: 0x4a3a28, roughness: 0.95 });
+      var cageM = new THREE.MeshBasicMaterial({ color: 0xffb060 });
+      var n = 0, lim = 6 + level * 2;
+      for (var zq = 1; zq < gh - 1 && n < lim; zq++) for (var xq = 7; xq < gw - 1 && n < lim; xq++) {
+        if (grid[zq][xq] !== 0 || Math.random() > 0.07) continue;
+        if (railHall && xq >= railHall.xa - 1 && xq <= railHall.xb + 1 && zq >= railHall.z0 - 1 && zq <= railHall.z0 + 3) continue;
+        if ((xq === exit[0] && zq === exit[1]) || inBlock((xq + 0.5) * CELL, (zq + 0.5) * CELL)) continue;
+        var dq = DIRS[Math.floor(Math.random() * 4)];
+        if (grid[zq + dq[1]][xq + dq[0]] !== 1) continue;
+        var ox = (xq + 0.5) * CELL + dq[0] * 1.15, oz = (zq + 0.5) * CELL + dq[1] * 1.15, kind = Math.floor(Math.random() * 3), pg = new THREE.Group();
+        if (kind === 0) {
+          for (var d = 0; d < 2; d++) { var dr = new THREE.Mesh(new THREE.CylinderGeometry(0.28, 0.28, 0.9, 10), d ? rustM : drumM); dr.position.set(d * 0.62 - 0.3, 0.45, (d ? 0.1 : -0.05) ); pg.add(dr);
+            var ring = new THREE.Mesh(new THREE.CylinderGeometry(0.29, 0.29, 0.05, 10), trainDark); ring.position.set(dr.position.x, 0.6, dr.position.z); pg.add(ring); }
+        } else if (kind === 1) {
+          addBox(pg, crateM, 0.9, 0.8, 0.9, 0, 0.4, 0, 0.2); addBox(pg, crateM, 0.7, 0.6, 0.7, 0.15, 1.1, 0, -0.4);
+        } else {
+          for (var b2 = 0; b2 < 4; b2++) { var bg = new THREE.Mesh(new THREE.SphereGeometry(0.3 + Math.random() * 0.1, 8, 6), bagM); bg.scale.y = 0.75; bg.position.set((Math.random() - 0.5) * 0.9, 0.25, (Math.random() - 0.5) * 0.5); pg.add(bg); }
+        }
+        pg.position.set(ox, 0, oz); pg.rotation.y = Math.atan2(dq[0], dq[1]) + Math.PI / 2; levelGroup.add(pg);
+        blockers.push({ x0: ox - 0.5, x1: ox + 0.5, z0: oz - 0.5, z1: oz + 0.5 }); n++;
+        if (Math.random() < 0.5) {
+          var lx = (xq + 0.5) * CELL + dq[0] * 1.4, lz = (zq + 0.5) * CELL + dq[1] * 1.4;
+          var lamp = new THREE.Mesh(new THREE.SphereGeometry(0.13, 8, 6), cageM); lamp.position.set(lx, 2.5, lz); levelGroup.add(lamp);
+          var cg = new THREE.Mesh(new THREE.SphereGeometry(0.19, 6, 5), new THREE.MeshBasicMaterial({ color: 0x1a1008, wireframe: true })); cg.position.copy(lamp.position); levelGroup.add(cg);
+          lightSrc.push({ x: lx - dq[0] * 0.4, y: 2.4, z: lz - dq[1] * 0.4, c: 0xff9a4a, k: 1.3, dist: 8 });
+        }
+      }
+    })();
     // Props from the real station: wooden barriers along the walls, puddles, dead fluorescent tubes.
     var pcount = 0;
     for (z = 1; z < gh - 1; z++) for (x = 1; x < gw - 1; x++) {
       if (grid[z][x] !== 0) continue;
+      if (x <= 5 && z >= cy - 2 && z <= cy + 2) continue;
       var cx0 = (x + 0.5) * CELL, cz0 = (z + 0.5) * CELL, isExit = x === exit[0] && z === exit[1];
       var r1 = Math.random();
       if (r1 < 0.2) {
@@ -941,6 +1291,13 @@ Look at it to freeze it. Back away to win some distance.</p>
         pud.position.set(cx0 + (Math.random() - 0.5) * 1.2, 0.012, cz0 + (Math.random() - 0.5) * 1.2);
         levelGroup.add(pud);
       }
+      if (Math.random() < 0.4) {
+        var ms = new THREE.Sprite(mistMat); var msz = 3.2 + Math.random() * 2.4;
+        ms.scale.set(msz, msz * 0.55, 1);
+        ms.position.set(cx0 + (Math.random() - 0.5) * 2, 0.35 + Math.random() * 0.7, cz0 + (Math.random() - 0.5) * 2);
+        ms.userData = { bx: ms.position.x, bz: ms.position.z, ph: Math.random() * 6.28, sp: 0.08 + Math.random() * 0.12 };
+        levelGroup.add(ms); mist.push(ms);
+      }
       if (Math.random() < 0.3) {
         var tb = new THREE.Group(), lit = !hunt && Math.random() < 0.4;
         var hs = new THREE.Mesh(boxGeo, tubeBodyMat); hs.scale.set(1.3, 0.07, 0.16); tb.add(hs);
@@ -956,15 +1313,15 @@ Look at it to freeze it. Back away to win some distance.</p>
     }
 
     // Red signal lamps on the walls, and graffiti.
-    var extras = 0, tr2 = 0, GR = ["SOV INTE", "DU ÄR INTE ENSAM", "KAMO", "KYMLINGE", "HÖGEN", "SILVERPILEN"], GC = ["#c8352c", "#d9d6cf", "#b8b13a"];
-    while (extras < 12 && tr2 < 300) {
+    var extras = 0, tr2 = 0, GR = ["GET OUT", "GÅ HÄRIFRÅN", "TURN BACK", "DON'T BLINK", "IT SEES YOU", "DON'T LOOK BACK", "LÄMNA STATIONEN", "RUN", "NO EXIT", "IT WATCHES", "SOV INTE", "DU ÄR INTE ENSAM", "KYMLINGE", "SILVERPILEN", "VÄND OM", "DON'T SLEEP"], GC = ["#c8352c", "#c8352c", "#d9d6cf", "#b8b13a"];
+    while (extras < 22 && tr2 < 500) {
       tr2++;
       var gx2 = 1 + Math.floor(Math.random() * (gw - 2)), gz2 = 1 + Math.floor(Math.random() * (gh - 2));
       if (grid[gz2][gx2] !== 1) continue;
       var gdi = Math.floor(Math.random() * 4), gdx = DIRS[gdi][0], gdz = DIRS[gdi][1];
       if (grid[gz2 + gdz][gx2 + gdx] !== 0) continue;
       var wxp = (gx2 + 0.5) * CELL + gdx * (CELL / 2 + 0.012), wzp = (gz2 + 0.5) * CELL + gdz * (CELL / 2 + 0.012);
-      if (extras % 3 === 2) {
+      if (false) {
         var lamp = new THREE.Mesh(new THREE.SphereGeometry(0.07, 8, 6), redLampMat);
         lamp.position.set(wxp - gdx * -0.02, 1.4, wzp - gdz * -0.02); levelGroup.add(lamp);
       } else {
@@ -996,6 +1353,10 @@ Look at it to freeze it. Back away to win some distance.</p>
   }
 
   var poolK = [], poolTube = [];
+  var mist = [], mistMat = new THREE.SpriteMaterial({ map: fogTex(), color: 0x8a9a98, depthWrite: false, transparent: true, opacity: 0.2 });
+  function mistTick(tt) {
+    for (var i = 0; i < mist.length; i++) { var m = mist[i], u = m.userData; m.position.x = u.bx + Math.sin(tt * u.sp + u.ph) * 0.9; m.position.z = u.bz + Math.cos(tt * u.sp * 0.8 + u.ph) * 0.7; }
+  }
   function updateLights() {
     var arr = lightSrc.map(function (s) { var dx = s.x - px, dz = s.z - pz; return { s: s, d: dx * dx + dz * dz }; });
     arr.sort(function (a, b) { return a.d - b.d; });
@@ -1006,13 +1367,19 @@ Look at it to freeze it. Back away to win some distance.</p>
         pool[i].color.setHex(src.c || 0x2bff88); pool[i].distance = src.dist || 13;
         poolK[i] = src.k || 1.5; poolTube[i] = !!src.tube;
       } else { pool[i].position.set(0, -50, 0); poolK[i] = 0; }
-      pool[i].intensity = poolK[i] * (poolTube[i] ? tubeFlick : 1);
+      pool[i].intensity = poolK[i] * (poolTube[i] ? tubeFlick : 0.7 + 0.3 * tubeFlick);
     }
   }
 
   /* ---------- Game state ---------- */
   var state = "ready";          // ready | play | dead | won
   var px = 0, pz = 0, yaw = -Math.PI / 2, pitch = 0;
+  var sprintLeft = 1, sprintT = 0;
+  function trySprint() {
+    if (paused || state !== "play" || sprintLeft < 1 || sprintT > 0) return;
+    sprintLeft = 0; sprintT = 3; el.sprintBtn.disabled = true; el.sprintBtn.textContent = "Sprint used"; el.sprintBtn.classList.add("down");
+  }
+  var glEl = document.getElementById("gl");
   var held = false, walkBtn = false, ignoreUntilRelease = false, keys = {};
   var forced = 0, lid = 0, strain = 0, seen = false;
   var stateT = 0, walkT = 0, stepT = 0, hbT = 1, lightT = 0, t = 0, cleared = 0;
@@ -1052,6 +1419,9 @@ Look at it to freeze it. Back away to win some distance.</p>
     updateLights();
   }
   function startGame() {
+    leaveCity();
+    if (state === "dead" || state === "end" || state === "intro" || state === "ready") { sprintLeft = 1; el.sprintBtn.disabled = false; el.sprintBtn.textContent = "Sprint (once)"; }
+    sprintT = 0; el.sprintBtn.classList.remove("down");
     if (state === "dead" || state === "end") { level = 1; gmode = "escape"; }
     else if (state === "won") { level++; }
     initAudio();
@@ -1059,20 +1429,24 @@ Look at it to freeze it. Back away to win some distance.</p>
     pool.forEach(function (l) { l.visible = true; });
     el.blinkBtn.textContent = "Hold to blink"; el.choices.hidden = true;
     buildLevel(false); resetPlayer();
+    wake.t = (level === 1 && gmode === "escape") ? 0 : 99; wake.grace = wake.t === 0 ? 20 : 0; wake.hot = false;
+    if (wake.t === 0 && startBench) { px = startBench.x; pz = startBench.z; yaw = Math.PI / 2; pitch = -0.32; camY = -0.5; ent.position.set(spawn.x, 0, spawn.z); } else { camY = 0; }
+    glEl.style.filter = "";
     state = "play"; held = false; ignoreUntilRelease = true;
     el.overlay.hidden = true;
     updateHud();
   }
   function pressBlink(v) {
     if (state === "ready") { if (v) startGame(); return; }
-    if (state === "dead") { if (v && stateT > 0.9) startGame(); return; }
+    if (state === "dead") { if (v && stateT > 2.9) startGame(); return; }
     if (state === "won") { if (v && stateT > 0.6) startGame(); return; }
     if (state === "choice") return;
-    if (state === "end") { if (v && stateT > 0.9) startGame(); return; }
+    if (state === "end") { if (v && stateT > (cityMode ? 18.5 : 0.9)) startGame(); return; }
     if (state === "intro") {
       if (v && stateT > 0.4) { state = "play"; held = false; ignoreUntilRelease = true; el.overlay.hidden = true; }
       return;
     }
+    if (wake.t < 8) { if (v && wake.t > 2 && wake.t < 6) wake.t = 6; return; }
     if (ignoreUntilRelease) { if (!v) ignoreUntilRelease = false; return; }
     held = v;
     el.blinkBtn.classList.toggle("down", v);
@@ -1081,6 +1455,7 @@ Look at it to freeze it. Back away to win some distance.</p>
     el.level.textContent = gmode === "hunt" ? "Hunt · second deaths " + caught + "/" + (hunted.length || HUNT_N) : "Level " + level;
     el.best.textContent = "Best " + best;
   }
+  var camYaw = 0, camRoll = 0;
   var scareD = 0, scareFx = 0, scareFz = 0, scareRoot = false, flashEl = null, shakeT = 0;
   function scareFlash() {
     if (!flashEl) {
@@ -1091,9 +1466,19 @@ Look at it to freeze it. Back away to win some distance.</p>
     flashEl.style.transition = "none"; flashEl.style.background = "#fff"; flashEl.style.opacity = "0.95";
     setTimeout(function () { flashEl.style.transition = "opacity .5s ease-out, background .5s"; flashEl.style.background = "#a00000"; flashEl.style.opacity = "0.55"; }, 70);
     setTimeout(function () { flashEl.style.transition = "opacity 1.4s ease-in"; flashEl.style.opacity = "0.18"; }, 600);
-    shakeT = 1.1;
+    shakeT = 3;
+  }
+  var scareEl = null;
+  function loadScare() {
+    if (scareEl || !AC) return;
+    try {
+      scareEl = new Audio("kymlinge-jumpscare.mp3"); scareEl.preload = "auto";
+      var src = AC.createMediaElementSource(scareEl), g = AC.createGain(); g.gain.value = 1.0; src.connect(g); g.connect(master);
+    } catch (e) { scareEl = null; }
   }
   function jumpSound() {
+    if (musicGain && AC) musicGain.gain.setTargetAtTime(0.06, AC.currentTime, 0.05);
+    if (scareEl && soundOn) { try { scareEl.currentTime = 0; scareEl.play().catch(function () {}); thump(0.7, 55, 0.6); return; } catch (e) {} }
     thump(1.0, 70, 0.9); thump(0.8, 38, 1.2);
     burst("bandpass", 2200, 1.2, 0.9, 0.9); burst("highpass", 3500, 0.7, 0.7, 0.6); burst("lowpass", 300, 0.7, 0.9, 1.2);
     if (!AC || !soundOn) return;
@@ -1103,12 +1488,46 @@ Look at it to freeze it. Back away to win some distance.</p>
     o.connect(g); g.connect(master); o.start(tt); o.stop(tt + 1);
   }
   // The lunge: it covers the last three metres in a tenth of a second, the camera punches in and shakes.
+  // Death glitch: a copy of the frame drawn on top with torn horizontal bands, RGB-split ghosts and scanlines.
+  var glitchC = null, glitchX = null, vigEl = null;
+  function glitchDraw() {
+    if (!glitchC) {
+      glitchC = document.createElement("canvas");
+      glitchC.style.cssText = "position:absolute;inset:0;width:100%;height:100%;pointer-events:none;display:none";
+      el.gl.appendChild(glitchC); glitchX = glitchC.getContext("2d");
+    }
+    if (!vigEl) { vigEl = document.createElement("div"); vigEl.style.cssText = "position:absolute;inset:0;pointer-events:none;display:none"; el.gl.appendChild(vigEl); }
+    if (state !== "dead") { glitchC.style.display = "none"; vigEl.style.display = "none"; return; }
+    var vu = Math.max(0, Math.min(1, (stateT - 0.35) / 2.3)), R = 130 - 140 * vu * vu * (3 - 2 * vu);
+    vigEl.style.display = "block";
+    vigEl.style.background = "radial-gradient(circle at 50% 50%, rgba(0,0,0,0) " + Math.max(0, R - 30) + "%, rgba(70,0,0,0.85) " + Math.max(1, R) + "%, #000 " + Math.max(2, R + 22) + "%)";
+    var src = renderer.domElement, w = src.width, h = src.height;
+    if (glitchC.width !== w || glitchC.height !== h) { glitchC.width = w; glitchC.height = h; }
+    glitchC.style.display = "block";
+    var k = stateT < 2.5 ? 1 : 0.55, burst = Math.random() < 0.35 * k;
+    var x = glitchX; x.globalCompositeOperation = "source-over"; x.clearRect(0, 0, w, h);
+    x.drawImage(src, 0, 0);
+    var bands = burst ? 4 + Math.floor(Math.random() * 8) : 1;
+    for (var i = 0; i < bands; i++) {
+      var by = Math.random() * h, bh = (0.01 + Math.random() * 0.09) * h, off = (Math.random() - 0.5) * w * 0.25 * k;
+      x.drawImage(src, 0, by, w, bh, off, by, w, bh);
+    }
+    if (burst) {
+      var sp = (4 + Math.random() * 14) * (w / 1000);
+      x.globalCompositeOperation = "lighter"; x.globalAlpha = 0.55;
+      x.drawImage(src, -sp, 0); x.globalCompositeOperation = "multiply"; x.fillStyle = "#ff0030"; x.globalAlpha = 0.25; x.fillRect(0, 0, w, h);
+      x.globalAlpha = 1; x.globalCompositeOperation = "source-over";
+      var inv = Math.random() < 0.18; if (inv) { x.globalCompositeOperation = "difference"; x.fillStyle = "#fff"; x.globalAlpha = 0.8; x.fillRect(0, Math.random() * h, w, (0.03 + Math.random() * 0.1) * h); x.globalAlpha = 1; x.globalCompositeOperation = "source-over"; }
+    }
+    x.fillStyle = "rgba(0,0,0,0.22)"; for (var yy = 0; yy < h; yy += 4) x.fillRect(0, yy, w, 1);
+  }
   function scareTick(dt) {
     if (state !== "dead") { if (shakeT > 0) shakeT = 0; camera.fov !== 72 && (camera.fov = 72, camera.updateProjectionMatrix()); return; }
     var k = Math.min(1, stateT / 0.11), e = k * k * (3 - 2 * k), d = scareD + (0.42 - scareD) * e;
+    if (stateT > 0.11) d = 0.3 - 0.22 * Math.min(1, (stateT - 0.11) / 0.4) + 0.12 * Math.sin(stateT * 20) * Math.max(0, 1 - stateT / 2.5);
     ent.position.set(px + scareFx * d, Math.max(0, Math.sin(k * Math.PI) * 0.15), pz + scareFz * d);
     if (entRig) { entRig.mixer.update(dt * 2.5); }
-    var f = 72 + 22 * e; if (camera.fov !== f) { camera.fov = f; camera.updateProjectionMatrix(); }
+    var f = 72 + 22 * e + (stateT > 0.11 ? Math.sin(stateT * 17) * 7 * Math.max(0, 1 - stateT / 2.5) : 0); if (camera.fov !== f) { camera.fov = f; camera.updateProjectionMatrix(); }
     if (shakeT > 0) shakeT -= dt;
   }
   function die() {
@@ -1144,7 +1563,9 @@ Look at it to freeze it. Back away to win some distance.</p>
   }
 
   /* ---------- Movement and the entity ---------- */
-  function blocked(x, z) { return solid(x - RAD, z - RAD) || solid(x + RAD, z - RAD) || solid(x - RAD, z + RAD) || solid(x + RAD, z + RAD); }
+  var blockers = [];
+  function inBlock(x, z) { for (var i = 0; i < blockers.length; i++) { var b = blockers[i]; if (x >= b.x0 && x <= b.x1 && z >= b.z0 && z <= b.z1) return true; } return false; }
+  function blocked(x, z) { return solid(x - RAD, z - RAD) || solid(x + RAD, z - RAD) || solid(x - RAD, z + RAD) || solid(x + RAD, z + RAD) || inBlock(x - RAD, z - RAD) || inBlock(x + RAD, z - RAD) || inBlock(x - RAD, z + RAD) || inBlock(x + RAD, z + RAD); }
   function tryMove(dx, dz) {
     if (!blocked(px + dx, pz)) px += dx;
     if (!blocked(px, pz + dz)) pz += dz;
@@ -1203,11 +1624,46 @@ Look at it to freeze it. Back away to win some distance.</p>
     }
   }
 
+  var LIDK = [[0, 1], [0.9, 1], [1.4, 0.55], [1.8, 0.95], [2.4, 0.6], [2.7, 0.92], [3.4, 0.3], [3.7, 0.65], [4.4, 0.12], [4.8, 0.4], [5.2, 0], [6, 0]];
+  function lidAt(t) { for (var i = 1; i < LIDK.length; i++) if (t <= LIDK[i][0]) { var a = LIDK[i - 1], b = LIDK[i], k = (t - a[0]) / (b[0] - a[0]); return a[1] + (b[1] - a[1]) * k; } return 0; }
+  function stepWake(dt) {
+    wake.t += dt;
+    var t = wake.t;
+    lid = lidAt(t); held = false;
+    glEl.style.filter = t < 7 ? "blur(" + (Math.max(0, 1 - t / 5.5) * 9).toFixed(1) + "px)" : "";
+    if (t < 6) { camY = -0.5 + Math.sin(t * 1.3) * 0.012; pitch += (0.02 - pitch) * Math.min(1, dt * 0.7); yaw += Math.sin(t * 0.9) * 0.0006; }
+    else {
+      var k = Math.min(1, (t - 6) / 2), e = k * k * (3 - 2 * k);
+      camY = -0.5 * (1 - e); px = startBench.x + 1.05 * e;
+      if (t - dt < 6.1 && t >= 6.1) footstep(1, 0);
+    }
+    if (t >= 8) { wake.t = 8; camY = 0; glEl.style.filter = ""; lid = 0; ignoreUntilRelease = true; }
+    audioStep(dt, 40, false);
+    lightT -= dt; if (lightT <= 0) { updateLights(); lightT = 0.12; }
+    return false;
+  }
+  function wakeEntity(stumbled) {
+    wake.grace = 0; wake.hot = true;
+    if (!stumbled) {
+      var cxp = Math.floor(px / CELL), czp = Math.floor(pz / CELL), b = bfs(cxp, czp), best = null, bs = -9, x, z, fx = -Math.sin(yaw), fz = -Math.cos(yaw);
+      for (z = 0; z < gh; z++) for (x = 0; x < gw; x++) {
+        var dd = b.d[z][x]; if (dd < 4 || dd > 6) continue;
+        var wx = (x + 0.5) * CELL - px, wz = (z + 0.5) * CELL - pz, hl = Math.hypot(wx, wz) || 1, sc = (wx * fx + wz * fz) / hl + Math.random() * 0.25;
+        if (sc > bs) { bs = sc; best = [x, z]; }
+      }
+      if (best) ent.position.set((best[0] + 0.5) * CELL, 0, (best[1] + 0.5) * CELL);
+    }
+    ent.visible = true; strain = 20;
+    try { heartBeat(1); } catch (e) {}
+  }
   function stepPlay(dt) {
+    if (wake.t < 8) return stepWake(dt);
+    var grace = wake.grace > 0;
+    if (grace) { wake.grace -= dt; var dg = Math.hypot(ent.position.x - px, ent.position.z - pz); if (wake.grace <= 0) { wakeEntity(false); grace = false; } else if (dg < 11) { wakeEntity(true); grace = false; } }
     var closed = held || forced > 0;
     if (forced > 0) { forced -= dt; if (forced <= 0) strain = 30; }
     var rate = 9 + level * 1.2;
-    if (!closed) { strain += rate * dt; if (strain >= 100) { strain = 100; forced = FORCED; } }
+    if (!closed && !grace) { strain += rate * dt; if (strain >= 100) { strain = 100; forced = FORCED; } }
     else if (forced <= 0) { strain = Math.max(0, strain - REST * dt); }
 
     var walking = false;
@@ -1215,23 +1671,24 @@ Look at it to freeze it. Back away to win some distance.</p>
       var fw = (keys.KeyW || keys.ArrowUp ? 1 : 0) - (keys.KeyS || keys.ArrowDown ? 1 : 0) + (walkBtn ? 1 : 0);
       var sd = (keys.KeyD ? 1 : 0) - (keys.KeyA ? 1 : 0);
       yaw += ((keys.ArrowLeft ? 1 : 0) - (keys.ArrowRight ? 1 : 0)) * 1.9 * dt;
+      if (sprintT > 0) { sprintT -= dt; fw = 1; if (sprintT <= 0) el.sprintBtn.classList.remove("down"); }
       fw = Math.max(-1, Math.min(1, fw));
       var len = Math.hypot(fw, sd);
       if (len > 0) {
-        var fx = -Math.sin(yaw), fz = -Math.cos(yaw), rx = Math.cos(yaw), rz = -Math.sin(yaw), k = WALK * (fw < 0 ? 0.6 : 1) / Math.max(1, len);
+        var fx = -Math.sin(yaw), fz = -Math.cos(yaw), rx = Math.cos(yaw), rz = -Math.sin(yaw), k = WALK * (fw < 0 ? 0.6 : 1) * (sprintT > 0 ? 2.1 : 1) / Math.max(1, len);
         tryMove((fx * fw + rx * sd) * k * dt, (fz * fw + rz * sd) * k * dt);
         walking = true; walkT += dt;
         stepT -= dt;
-        if (stepT <= 0) { if (!inBlood()) footstep(1, 0); stepT = 0.52; }
+        if (stepT <= 0) { if (!inBlood()) footstep(sprintT > 0 ? 1.4 : 1, 0); stepT = sprintT > 0 ? 0.26 : 0.52; }
       }
     }
 
     seen = !closed && entitySeen();
     focusSigns(closed);
-    if (!seen) moveEntity(dt);
+    if (!seen && !grace) moveEntity(dt);
 
     var d = Math.hypot(ent.position.x - px, ent.position.z - pz);
-    if (d < 0.9) { die(); return; }
+    if (d < 0.9 && !grace) { die(); return; }
     if (Math.hypot(exitPos.x - px, exitPos.z - pz) < 1.2) { win(); return; }
 
     lid += ((closed ? 1 : 0) - lid) * Math.min(1, dt * (closed ? 16 : 9));
@@ -1382,8 +1839,9 @@ Look at it to freeze it. Back away to win some distance.</p>
   el.leaveBtn.addEventListener("click", function () {
     state = "end"; stateT = 0; gmode = "escape";
     el.choices.hidden = true;
-    el.oTitle.textContent = "You walked out into the morning.";
-    el.oBody.textContent = "Levels cleared: 3.\nYou do not look back.";
+    enterCity();
+    el.oTitle.textContent = "You walked out into Stockholm.";
+    el.oBody.textContent = "Levels cleared: 3.\nThe city is empty. Nothing follows you.\nAt the end of the street, something stands very still.";
     el.oCta.textContent = "Press space or tap to play again";
   });
   el.huntBtn.addEventListener("click", startHunt);
@@ -1427,7 +1885,18 @@ Look at it to freeze it. Back away to win some distance.</p>
       riser = AC.createGain(); riser.gain.value = 0;
       riserOsc = AC.createOscillator(); riserOsc.type = "sine"; riserOsc.frequency.value = 800;
       riserOsc.connect(riser); riser.connect(master); riserOsc.start();
+      startMusic(); loadScare();
     } catch (e) { AC = null; }
+  }
+  // Background music: loops under everything, swelling a little as the entity closes in.
+  function startMusic() {
+    if (musicEl) { musicEl.play && musicEl.play().catch(function () {}); return; }
+    try {
+      musicEl = new Audio("kymlinge-music.mp3"); musicEl.loop = true; musicEl.preload = "auto";
+      var src = AC.createMediaElementSource(musicEl);
+      musicGain = AC.createGain(); musicGain.gain.value = 0.32; src.connect(musicGain); musicGain.connect(master);
+      musicEl.play().catch(function () {});
+    } catch (e) { musicEl = null; }
   }
   function thump(vol, f, dur) {
     if (!AC || !soundOn) return;
@@ -1447,26 +1916,60 @@ Look at it to freeze it. Back away to win some distance.</p>
     s.connect(f); f.connect(g); g.connect(master); s.start(tt); s.stop(tt + dur + 0.1);
   }
   // Footsteps on concrete: a dull heel knock plus a short scuff, fed into a light tunnel echo (two quiet repeats).
-  var echoIn = null, stepAlt = 0, entStepD = 0, entLast = null;
+  var echoIn = null, stepAlt = 0, musicGain = null, musicEl = null;
+  // Concrete corridor reverb: a synthetic impulse response, decaying noise that loses its highs.
+  function makeReverb() {
+    var len = Math.floor(AC.sampleRate * 1.9), ir = AC.createBuffer(2, len, AC.sampleRate);
+    for (var ch = 0; ch < 2; ch++) {
+      var d = ir.getChannelData(ch), lp = 0;
+      for (var i = 0; i < len; i++) {
+        var u = i / len, n = (Math.random() * 2 - 1) * Math.pow(1 - u, 3.2);
+        lp += (n - lp) * (0.25 + 0.6 * (1 - u)); d[i] = lp;
+      }
+    }
+    var cv = AC.createConvolver(); cv.buffer = ir;
+    var wet = AC.createGain(); wet.gain.value = 0.7;
+    echoIn = AC.createGain(); echoIn.connect(cv); cv.connect(wet); wet.connect(master);
+  }
+  // A shoe on concrete: heel strike (sharp, bright), body thud, then the sole rolling down (a short scuff).
   function footstep(k, dist) {
     if (!AC || !soundOn || !noiseBuf) return;
-    if (!echoIn) {
-      echoIn = AC.createGain();
-      var dl = AC.createDelay(1), fb = AC.createGain(), lp = AC.createBiquadFilter(), wet = AC.createGain();
-      dl.delayTime.value = 0.23; fb.gain.value = 0.38; lp.type = "lowpass"; lp.frequency.value = 900; wet.gain.value = 0.55;
-      echoIn.connect(dl); dl.connect(lp); lp.connect(fb); fb.connect(dl); lp.connect(wet); wet.connect(master);
-    }
-    var near = 1 / (1 + dist * 0.55), vol = 0.2 * k * near;
+    if (!echoIn) makeReverb();
+    var vol = 0.28 * k * (1 + (Math.random() - 0.5) * 0.3) / (1 + dist * 0.55);
     if (vol < 0.004) return;
-    var tt = AC.currentTime, side = (stepAlt++ % 2) ? 1 : 0.9;
-    var o = AC.createOscillator(), g = AC.createGain(), s = AC.createBufferSource(), f = AC.createBiquadFilter(), g2 = AC.createGain();
-    o.type = "sine"; o.frequency.setValueAtTime(95 * side, tt); o.frequency.exponentialRampToValueAtTime(48, tt + 0.1);
-    g.gain.setValueAtTime(0.0001, tt); g.gain.exponentialRampToValueAtTime(vol * 1.3, tt + 0.008); g.gain.exponentialRampToValueAtTime(0.0001, tt + 0.13);
-    s.buffer = noiseBuf; f.type = "bandpass"; f.frequency.value = (dist > 0 ? 700 : 1300) * side; f.Q.value = 0.9;
-    g2.gain.setValueAtTime(0.0001, tt); g2.gain.exponentialRampToValueAtTime(vol * 0.9, tt + 0.006); g2.gain.exponentialRampToValueAtTime(0.0001, tt + 0.07);
-    o.connect(g); s.connect(f); f.connect(g2);
-    g.connect(master); g2.connect(master); g.connect(echoIn); g2.connect(echoIn);
-    o.start(tt); o.stop(tt + 0.2); s.start(tt, Math.random()); s.stop(tt + 0.1);
+    var tt = AC.currentTime, foot = (stepAlt++ % 2), pitch = 1 + (Math.random() - 0.5) * 0.25 + foot * 0.06;
+    var pan = AC.createStereoPanner ? AC.createStereoPanner() : null; if (pan) pan.pan.value = foot ? 0.2 : -0.2;
+    var out = AC.createGain(); out.gain.value = 1;
+    if (pan) { out.connect(pan); pan.connect(master); pan.connect(echoIn); } else { out.connect(master); out.connect(echoIn); }
+    function noise(type, freq, q, v, start, dur, off) {
+      var sc = AC.createBufferSource(); sc.buffer = noiseBuf;
+      var f = AC.createBiquadFilter(); f.type = type; f.frequency.value = freq * pitch; f.Q.value = q;
+      var g = AC.createGain(); g.gain.setValueAtTime(0.0001, tt + start);
+      g.gain.exponentialRampToValueAtTime(v, tt + start + 0.003); g.gain.exponentialRampToValueAtTime(0.0001, tt + start + dur);
+      sc.connect(f); f.connect(g); g.connect(out); sc.start(tt + start, off); sc.stop(tt + start + dur + 0.02);
+    }
+    noise("bandpass", 2600, 1.4, vol * 0.9, 0, 0.035, Math.random());        // heel click
+    noise("lowpass", 700, 0.8, vol * 0.7, 0.004, 0.09, Math.random());       // dull slap of the sole
+    noise("bandpass", 1500, 0.9, vol * 0.35, 0.07, 0.11, Math.random());     // scuff as the toe lands
+    var o = AC.createOscillator(), og = AC.createGain();
+    o.type = "sine"; o.frequency.setValueAtTime(130 * pitch, tt); o.frequency.exponentialRampToValueAtTime(55, tt + 0.1);
+    og.gain.setValueAtTime(0.0001, tt); og.gain.exponentialRampToValueAtTime(vol * 1.1, tt + 0.006); og.gain.exponentialRampToValueAtTime(0.0001, tt + 0.14);
+    o.connect(og); og.connect(out); o.start(tt); o.stop(tt + 0.18);
+  }
+  // Heart: a low "lub" with a click on top, then a softer "dub". Louder and closer together the nearer it is.
+  function heartBeat(close) {
+    if (!AC || !soundOn) return;
+    function beat(delay, f, v, dur) {
+      var tt = AC.currentTime + delay, o = AC.createOscillator(), o2 = AC.createOscillator(), g = AC.createGain();
+      o.type = "sine"; o2.type = "triangle";
+      o.frequency.setValueAtTime(f, tt); o.frequency.exponentialRampToValueAtTime(f * 0.55, tt + dur);
+      o2.frequency.setValueAtTime(f * 2.4, tt); o2.frequency.exponentialRampToValueAtTime(f * 1.2, tt + dur);
+      var g2 = AC.createGain(); g2.gain.value = 0.35; o2.connect(g2); g2.connect(g);
+      g.gain.setValueAtTime(0.0001, tt); g.gain.exponentialRampToValueAtTime(v, tt + 0.012); g.gain.exponentialRampToValueAtTime(0.0001, tt + dur);
+      o.connect(g); g.connect(master); o.start(tt); o2.start(tt); o.stop(tt + dur + 0.05); o2.stop(tt + dur + 0.05);
+    }
+    var v = 0.25 + close * 0.75;
+    beat(0, 62, v, 0.2); beat(0.15 - close * 0.05, 52, v * 0.7, 0.2);
   }
   // Breathing: your own, quick and shaky when it is near or you are walking, and its dry rasp once it is close.
   var breathT = 2, entBreathT = 3, inhale = true;
@@ -1518,13 +2021,30 @@ Look at it to freeze it. Back away to win some distance.</p>
       riser.gain.setTargetAtTime(rc * 0.05, AC.currentTime, 0.1);
       riserOsc.frequency.setTargetAtTime(700 + rc * 500, AC.currentTime, 0.1);
     }
+    if (musicGain) musicGain.gain.setTargetAtTime(0.3 + close * 0.2, AC.currentTime, 0.5);
     hbT -= dt;
     if (hbT <= 0 && close > 0.04) {
-      thump(0.1 + close * 0.45, 70, 0.22);
-      setTimeout(function () { thump(0.07 + close * 0.3, 60, 0.2); }, 170 - close * 70);
+      heartBeat(close);
       hbT = 1.3 - close * 1.0;
     } else if (hbT <= 0) { hbT = 0.5; }
   }
+  var fsWrap = document.querySelector("main.wrap"), fsOn = false;
+  function fsSet(on) {
+    fsOn = on; fsWrap.classList.toggle("fs", on);
+    el.fsBtn.textContent = on ? "Exit full screen" : "Full screen"; el.fsBtn.setAttribute("aria-pressed", String(on));
+    setTimeout(resize, 50);
+  }
+  function fsToggle() {
+    if (!fsOn) {
+      fsSet(true);
+      try { var r = fsWrap.requestFullscreen && fsWrap.requestFullscreen(); if (r && r.catch) r.catch(function () {}); } catch (e) {}
+    } else {
+      fsSet(false);
+      try { if (document.fullscreenElement) document.exitFullscreen(); } catch (e) {}
+    }
+  }
+  document.addEventListener("fullscreenchange", function () { if (!document.fullscreenElement && fsOn) fsSet(false); });
+  el.fsBtn.addEventListener("click", function () { fsToggle(); el.fsBtn.blur(); });
   el.soundBtn.addEventListener("click", function () {
     soundOn = !soundOn;
     el.soundBtn.textContent = soundOn ? "Sound on" : "Sound off";
@@ -1561,6 +2081,9 @@ Look at it to freeze it. Back away to win some distance.</p>
     var c = e.code;
     if (c === "Space" || c === "ArrowUp" || c === "ArrowDown" || c === "ArrowLeft" || c === "ArrowRight") e.preventDefault();
     if (c === "Space") { if (!e.repeat) pressBlink(true); return; }
+    if (c === "KeyF") { if (!e.repeat) fsToggle(); return; }
+    if (c === "Escape" && fsOn) { fsSet(false); return; }
+    if (c === "ShiftLeft" || c === "ShiftRight") { if (!e.repeat) trySprint(); return; }
     keys[c] = true;
   });
   window.addEventListener("keyup", function (e) {
@@ -1576,6 +2099,7 @@ Look at it to freeze it. Back away to win some distance.</p>
     ["pointerup", "pointercancel", "lostpointercapture"].forEach(function (ev) { node.addEventListener(ev, off); });
   }
   hold(el.blinkBtn, function () { pressBlink(true); }, function () { pressBlink(false); });
+  el.sprintBtn.addEventListener("click", function () { trySprint(); el.sprintBtn.blur(); });
   hold(el.walkBtn, function () { if (!paused && state === "play") { walkBtn = true; el.walkBtn.classList.add("down"); } },
     function () { walkBtn = false; el.walkBtn.classList.remove("down"); });
 
@@ -1607,6 +2131,8 @@ Look at it to freeze it. Back away to win some distance.</p>
     else if (state === "dead") { mode = "forced"; label = "It reached you"; }
     else if (state === "won" || state === "choice") { mode = "open"; label = "Exit reached"; }
     else if (state === "end") { mode = "open"; label = gmode === "hunt" ? "The station is empty" : "You got out"; }
+    else if (wake.t < 8) { mode = "closed"; label = wake.t < 6 ? "Waking up on a bench · Space skips" : "Standing up"; }
+    else if (wake.grace > 0) { mode = "open"; label = "Quiet · explore · find the exit"; }
     else if (gmode === "hunt") {
       if (held) { mode = "closed"; label = "Eyes closed · you creep · they hold still"; }
       else if (seen) { mode = "open"; label = "You see it · it runs"; }
@@ -1628,7 +2154,7 @@ Look at it to freeze it. Back away to win some distance.</p>
     el.gapFill.style.width = (playing ? Math.min(100, d / 30 * 100) : 100) + "%";
     el.sMeter.classList.toggle("hot", playing && strain > 75);
     el.gMeter.classList.toggle("hot", playing && d < 8);
-    var showDir = gmode === "hunt" ? (playing && huntNear) : (playing && !seen && d < 25);
+    var showDir = gmode === "hunt" ? (playing && huntNear) : (playing && !seen && d < 25 && wake.t >= 8 && wake.grace <= 0);
     if (showDir && d < 30) {
       var edx = tx - px, edz = tz - pz;
       var rel = Math.atan2(edx * Math.cos(yaw) + edz * -Math.sin(yaw), edx * -Math.sin(yaw) + edz * -Math.cos(yaw));
@@ -1664,7 +2190,7 @@ Look at it to freeze it. Back away to win some distance.</p>
     demoT += dt; demoCool -= dt;
     if (state === "ready") { if (demoT > 2.2) { pressBlink(true); pressBlink(false); } return; }
     if (state === "won") { if (stateT > 2.4) { pressBlink(true); pressBlink(false); } return; }
-    if (state === "dead") { if (stateT > 1.5) { pressBlink(true); pressBlink(false); } return; }
+    if (state === "dead") { if (stateT > 3.1) { pressBlink(true); pressBlink(false); } return; }
     if (state === "choice") { if (stateT > 3.2) el.huntBtn.click(); return; }
     if (state === "intro") { if (stateT > 4.0) { pressBlink(true); pressBlink(false); } return; }
     if (state !== "play") return;
@@ -1711,7 +2237,7 @@ Look at it to freeze it. Back away to win some distance.</p>
     if (!paused && state === "play") { updateBlood(dt); if (gmode === "hunt") stepHunt(dt); else stepPlay(dt); }
     else if (state === "dead" || state === "won" || state === "choice" || state === "end" || state === "intro") {
       stateT += dt;
-      if (stateT > 1.0 && el.overlay.hidden) {
+      if (stateT > (state === "dead" ? 2.8 : (cityMode ? 18 : 1.0)) && el.overlay.hidden) {
         el.overlay.hidden = false;
         if (state === "choice") { el.choices.hidden = false; el.leaveBtn.focus(); }
       } else if (state === "choice" && stateT > 1.0 && el.choices.hidden) {
@@ -1720,27 +2246,48 @@ Look at it to freeze it. Back away to win some distance.</p>
     }
     flickT -= dt;
     if (flickT <= 0) {
-      flickSeq = flickSeq > 0 ? flickSeq - 1 : (Math.random() < 0.8 ? 3 + Math.floor(Math.random() * 6) : 0);
-      baseFlick = flickSeq > 0 ? (flickSeq % 2 ? 0.08 + Math.random() * 0.2 : 1) : 1;
-      flickT = flickSeq > 0 ? 0.04 + Math.random() * 0.09 : 0.5 + Math.random() * 2;
+      flickSeq = flickSeq > 0 ? flickSeq - 1 : (Math.random() < 0.92 ? 4 + Math.floor(Math.random() * 9) : 0);
+      baseFlick = flickSeq > 0 ? (flickSeq % 2 ? (Math.random() < 0.3 ? 0.01 : 0.05 + Math.random() * 0.25) : 0.7 + Math.random() * 0.3) : 1;
+      flickT = flickSeq > 0 ? 0.025 + Math.random() * 0.08 : 0.12 + Math.random() * 0.7;
     }
-    tubeFlick = baseFlick * (0.86 + 0.14 * Math.sin(t * 53) * Math.sin(t * 17.3));
-    ambLight.intensity = 0.4 * (0.6 + 0.4 * tubeFlick);
+    tubeFlick = baseFlick * (0.78 + 0.22 * Math.sin(t * 61) * Math.sin(t * 19.3));
+    if (!cityMode) ambLight.intensity = 0.4 * (0.6 + 0.4 * tubeFlick);
     tubeLitMat.color.setRGB(0.84 * tubeFlick, 0.93 * tubeFlick, tubeFlick); tubeGlowMat.opacity = 0.55 * tubeFlick;
-    for (var pk = 0; pk < pool.length; pk++) if (poolTube[pk]) pool[pk].intensity = poolK[pk] * tubeFlick;
-    if (entRig) { animAura(entRig.aura, t, entRig.w); if (state !== "dead") trackHead(entRig); }
-    for (var hi = 0; hi < hunted.length; hi++) if (hunted[hi].rig) { animAura(hunted[hi].rig.aura, t + hi * 3.7, 1); trackHead(hunted[hi].rig); }
-    animAxe(dt); animHunted(dt); scareTick(dt); breathTick(dt);
+    for (var pk = 0; pk < pool.length; pk++) pool[pk].intensity = poolK[pk] * (poolTube[pk] ? tubeFlick : 0.7 + 0.3 * tubeFlick);
+    if (entRig) animAura(entRig.aura, t, entRig.w);
+    for (var hi = 0; hi < hunted.length; hi++) if (hunted[hi].rig) animAura(hunted[hi].rig.aura, t + hi * 3.7, 1);
+    if (cityMode && state === "end") cityStep(dt);
+    animAxe(dt); animHunted(dt); scareTick(dt); breathTick(dt); mistTick(t);
   }
   function draw() {
-    var bob = (!RM && state === "play" && walkT > 0 && stepT > 0 && !held && forced <= 0 && (keys.KeyW || keys.KeyS || keys.ArrowUp || keys.ArrowDown || walkBtn)) ? Math.sin(walkT * 8) * 0.03 : 0;
-    camera.position.set(px, EYE + bob, pz);
-    camera.rotation.set(pitch, yaw, 0);
-    if (shakeT > 0 && state === "dead") { var sa = Math.min(1, shakeT) * 0.05; camera.rotation.x += (Math.random() - 0.5) * sa; camera.rotation.y += (Math.random() - 0.5) * sa; camera.rotation.z = (Math.random() - 0.5) * sa * 1.5; }
+    var moving = !RM && state === "play" && walkT > 0 && stepT > 0 && !held && forced <= 0 && (keys.KeyW || keys.KeyS || keys.ArrowUp || keys.ArrowDown || keys.KeyA || keys.KeyD || walkBtn);
+    var cx = 0, cy = 0, cz = 0, rx = 0, ry = 0, rz = 0;
+    if (!RM && state === "play") {
+      var rgx = Math.cos(yaw), rgz = -Math.sin(yaw), dyaw = camYaw - yaw; camYaw = yaw;
+      camRoll += ((Math.max(-0.05, Math.min(0.05, dyaw * 2.5))) - camRoll) * 0.12;          // lean into turns
+      cy += Math.sin(t * 1.1) * 0.012; rz += Math.sin(t * 0.7) * 0.006 + camRoll; ry += Math.sin(t * 0.45) * 0.004;   // slow breathing sway
+      if (moving) {
+        cy += Math.sin(walkT * 8) * 0.045; rz += Math.sin(walkT * 4) * 0.014; rx += Math.sin(walkT * 8 + 1) * 0.01;
+        cx += rgx * Math.sin(walkT * 4) * 0.035; cz += rgz * Math.sin(walkT * 4) * 0.035;
+      }
+      var dn = ent.visible ? Math.hypot(ent.position.x - px, ent.position.z - pz) : 99;
+      if (dn < 7) { var fr = (1 - dn / 7) * 0.006; rx += (Math.random() - 0.5) * fr; ry += (Math.random() - 0.5) * fr; rz += (Math.random() - 0.5) * fr * 1.5; }
+    }
+    camera.position.set(px + cx, EYE + cy + camY, pz + cz);
+    camera.rotation.set(pitch + rx, yaw + ry, rz);
+    if (state === "dead") {
+      // Being eaten: the camera is thrown around, harder at first, easing off as the dark closes in.
+      var env = Math.max(0, 1 - stateT / 2.8), k2 = 0.2 + 0.8 * env;
+      camera.rotation.x += (Math.random() - 0.5) * 0.3 * k2 + Math.sin(stateT * 13) * 0.22 * env;
+      camera.rotation.y += (Math.random() - 0.5) * 0.3 * k2 + Math.sin(stateT * 9 + 1) * 0.18 * env;
+      camera.rotation.z = (Math.random() - 0.5) * 0.35 * k2 + Math.sin(stateT * 7) * 0.3 * env;
+      camera.position.x += (Math.random() - 0.5) * 0.14 * k2; camera.position.y += (Math.random() - 0.5) * 0.12 * k2; camera.position.z += (Math.random() - 0.5) * 0.14 * k2;
+    }
     ui();
     renderer.render(scene, camera);
     el.gl.dataset.sceneReady = "1";
     if (wetAnalyser) { var samples = new Float32Array(wetAnalyser.fftSize); wetAnalyser.getFloatTimeDomainData(samples); for (var i = 0; i < samples.length; i++) wetPeak = Math.max(wetPeak, Math.abs(samples[i])); }
+    glitchDraw();
   }
   function frame(now) {
     var dt = paused ? 0 : Math.min(0.05, (now - last) / 1000); last = now;
@@ -1750,7 +2297,7 @@ Look at it to freeze it. Back away to win some distance.</p>
   // Used by the recording harness: advance the game n fixed steps, then draw once.
   window.__game = { start: function () { startGame(); }, ent: ent, MODEL: MODEL,
     place: function (d, y) { yaw = y || 0; pitch = 0; var fx = -Math.sin(yaw), fz = -Math.cos(yaw); ent.visible = true; ent.position.set(px + fx * d, 0, pz + fz * d); ent.rotation.y = Math.atan2(-fx, -fz); },
-    rig: function () { return entRig; }, die: function () { die(); } };
+    rig: function () { return entRig; }, die: function () { die(); }, go: function (x, z, y, p) { px = x; pz = z; yaw = y; pitch = p || 0; updateLights(); }, info: function () { return { grid: grid.map(function (r) { return r.join(""); }), rail: railHall, stairs: stairInfo, CELL: CELL, start: startPos, exit: exitPos }; },  sfx: function () { footstep(1, 0); footstep(1.5, 8); heartBeat(0.8); return !!AC; } };
   window.__step = function (n, dt) { for (var i = 0; i < n; i++) tick(dt || 0.05); draw(); return { state: state, gmode: gmode, level: level, caught: caught }; };
 
   // Local-preview-only probes for the blood system; never exposed on the published app.
