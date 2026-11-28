@@ -1398,6 +1398,164 @@ Look at it to freeze it. Back away to win some distance.</p>
     } else if (vis.t >= vis.dur && (!seen || vis.t > vis.dur + 14)) endVisit(false);
   }
 
+  /* ---------- The wrecked Cx car: the train you were thrown out of ----------
+     Old Stockholm Cx stock in Bernadotte blue: rounded roof, pale stripe, brown doors, three-part cab front,
+     destination sign, two bogies. Damage: shattered windows, scrapes and soot, a door torn out, crumpled nose. */
+  var wreckFx = [];
+  function cxSideTex(len, o) {
+    var PPM = 100, W = Math.round(len * PPM), H = 215, i, k;
+    var c1 = document.createElement("canvas"), c2 = document.createElement("canvas"); c1.width = c2.width = W; c1.height = c2.height = H;
+    var c = c1.getContext("2d"), e = c2.getContext("2d");
+    var gr = c.createLinearGradient(0, 0, 0, H); gr.addColorStop(0, "#2f6fc0"); gr.addColorStop(1, "#1b4a90"); c.fillStyle = gr; c.fillRect(0, 0, W, H);
+    e.fillStyle = "#000"; e.fillRect(0, 0, W, H);
+    c.fillStyle = "#dfe3e4"; c.fillRect(0, 128, W, 12); c.fillStyle = "#aab2b6"; c.fillRect(0, 143, W, 4);      // the pale stripe
+    c.fillStyle = "rgba(0,0,0,0.16)"; for (i = 0; i < 3; i++) c.fillRect(0, 160 + i * 18, W, 3);
+    function crackWeb(cx, cy, r) {
+      c.strokeStyle = "rgba(230,240,255,0.75)"; c.lineWidth = 1.2;
+      for (var a = 0; a < 11; a++) { var an = a / 11 * 6.28 + Math.random() * 0.4; c.beginPath(); c.moveTo(cx, cy); var px = cx, py = cy; for (var s2 = 0; s2 < 4; s2++) { px += Math.cos(an + (Math.random() - 0.5) * 0.6) * r / 4; py += Math.sin(an + (Math.random() - 0.5) * 0.6) * r / 4; c.lineTo(px, py); } c.stroke(); }
+      for (var rr = r * 0.25; rr < r; rr += r * 0.25) { c.beginPath(); for (var a2 = 0; a2 <= 12; a2++) { var an2 = a2 / 12 * 6.28; c.lineTo(cx + Math.cos(an2) * rr * (0.8 + Math.random() * 0.4), cy + Math.sin(an2) * rr * (0.8 + Math.random() * 0.4)); } c.stroke(); }
+    }
+    function win(x, y, w, h, state) {   // state: 0 lit, 1 cracked, 2 smashed through
+      c.fillStyle = "#0b1626"; c.fillRect(x - 5, y - 5, w + 10, h + 10);
+      var g2 = c.createLinearGradient(0, y, 0, y + h); g2.addColorStop(0, state === 2 ? "#050505" : "#3a2a1a"); g2.addColorStop(1, state === 2 ? "#020202" : "#140e09");
+      c.fillStyle = g2; c.fillRect(x, y, w, h);
+      if (state !== 2) {
+        c.fillStyle = "rgba(10,8,6,0.8)"; c.fillRect(x + w * 0.08, y + h * 0.6, w * 0.36, h * 0.4); c.fillRect(x + w * 0.56, y + h * 0.6, w * 0.36, h * 0.4);   // seat backs inside
+        c.fillStyle = "rgba(160,190,210,0.12)"; c.beginPath(); c.moveTo(x, y + h * 0.15); c.lineTo(x + w * 0.35, y); c.lineTo(x + w * 0.55, y); c.lineTo(x, y + h * 0.45); c.fill();   // a streak of reflection
+        var eg = e.createLinearGradient(0, y, 0, y + h); eg.addColorStop(0, state === 1 ? "#3a2810" : "#6a4a22"); eg.addColorStop(1, "#1a1006"); e.fillStyle = eg; e.fillRect(x, y, w, h * 0.6);
+      }
+      if (state === 1) crackWeb(x + w * (0.3 + Math.random() * 0.4), y + h * (0.3 + Math.random() * 0.4), Math.max(w, h) * 0.7);
+      if (state === 2) {          // jagged remains of the pane round the frame
+        c.fillStyle = "rgba(170,190,200,0.55)";
+        for (var j = 0; j < 7; j++) { var sx = x + Math.random() * w, top = Math.random() < 0.5; c.beginPath(); c.moveTo(sx - 8, top ? y : y + h); c.lineTo(sx + 8, top ? y : y + h); c.lineTo(sx + (Math.random() - 0.5) * 10, top ? y + 8 + Math.random() * 22 : y + h - 8 - Math.random() * 22); c.fill(); }
+      }
+    }
+    var doors = []; for (k = 0; k < 3; k++) doors.push(Math.round((len * (0.17 + 0.33 * k)) * PPM));
+    doors.forEach(function (d, di) {
+      if (o.missingDoor === di) {            // torn out: a dark hole with ripped metal edges
+        c.fillStyle = "#050607"; c.fillRect(d - 70, 18, 140, 197);
+        c.fillStyle = "#6f777b"; for (var t2 = 0; t2 < 14; t2++) { var ty = 18 + Math.random() * 190, tl2 = Math.random() < 0.5; c.beginPath(); c.moveTo(tl2 ? d - 70 : d + 70, ty); c.lineTo((tl2 ? d - 70 : d + 70) + (tl2 ? 1 : -1) * (6 + Math.random() * 14), ty + 6); c.lineTo(tl2 ? d - 70 : d + 70, ty + 14); c.fill(); }
+        return;
+      }
+      c.fillStyle = "#16304d"; c.fillRect(d - 72, 16, 144, 199);
+      c.fillStyle = "#7a3b16"; c.fillRect(d - 65, 22, 130, 193); c.fillStyle = "#5a290d"; c.fillRect(d - 2, 22, 4, 193);
+      win(d - 56, 40, 48, 78, Math.random() < 0.4 ? 1 : 0); win(d + 8, 40, 48, 78, Math.random() < 0.3 ? 2 : 0);
+    });
+    for (k = 0; k < 4; k++) {               // window pairs between the doors
+      var x0 = k === 0 ? 30 : doors[k - 1] + 90, x1 = k === 3 ? W - 30 : doors[k] - 90;
+      for (var wx = x0; wx + 110 <= x1; wx += 130) win(wx, 30, 110, 82, Math.random() < 0.35 ? 2 : Math.random() < 0.4 ? 1 : 0);
+    }
+    // scrapes, dents, rust, soot heavier towards the crushed nose
+    for (i = 0; i < 70; i++) { var sx2 = Math.random() * W, sy2 = 60 + Math.random() * 150; c.strokeStyle = "rgba(220,225,230," + (0.15 + Math.random() * 0.35).toFixed(2) + ")"; c.lineWidth = 1 + Math.random() * 2; c.beginPath(); c.moveTo(sx2, sy2); c.lineTo(sx2 + 40 + Math.random() * 160, sy2 + (Math.random() - 0.5) * 18); c.stroke(); }
+    for (i = 0; i < 26; i++) { var dx2 = Math.random() * W, dy2 = 30 + Math.random() * 180, dr = 12 + Math.random() * 40, g3 = c.createRadialGradient(dx2, dy2, 1, dx2, dy2, dr); g3.addColorStop(0, "rgba(0,0,0,0.45)"); g3.addColorStop(1, "rgba(0,0,0,0)"); c.fillStyle = g3; c.fillRect(dx2 - dr, dy2 - dr, dr * 2, dr * 2); }
+    for (i = 0; i < 40; i++) { c.fillStyle = "rgba(120,62,24," + (Math.random() * 0.4).toFixed(2) + ")"; c.fillRect(Math.random() * W, 150 + Math.random() * 65, 4 + Math.random() * 20, 2 + Math.random() * 10); }
+    if (o.soot) { var sg = c.createLinearGradient(W * 0.6, 0, W, 0); sg.addColorStop(0, "rgba(10,8,6,0)"); sg.addColorStop(1, "rgba(10,8,6,0.85)"); c.fillStyle = sg; c.fillRect(0, 0, W, H); }
+    for (i = 0; i < 1600; i++) { c.fillStyle = "rgba(0,0,0," + (Math.random() * 0.12).toFixed(3) + ")"; c.fillRect(Math.random() * W, Math.random() * H, 2, 2); }
+    var t1 = new THREE.CanvasTexture(c1), t2b = new THREE.CanvasTexture(c2); t1.encoding = t2b.encoding = THREE.sRGBEncoding; t1.anisotropy = t2b.anisotropy = 4;
+    texKeep.push(t1, t2b);
+    return { map: t1, em: t2b };
+  }
+  function cxFrontTex(o) {
+    var W = 280, H = 255;
+    var c1 = document.createElement("canvas"), c2 = document.createElement("canvas"); c1.width = c2.width = W; c1.height = c2.height = H;
+    var c = c1.getContext("2d"), e = c2.getContext("2d");
+    var gr = c.createLinearGradient(0, 0, 0, H); gr.addColorStop(0, "#2f6fc0"); gr.addColorStop(1, "#1b4a90"); c.fillStyle = gr; c.fillRect(0, 0, W, H);
+    e.fillStyle = "#000"; e.fillRect(0, 0, W, H);
+    c.fillStyle = "#5a6266"; c.fillRect(0, 0, W, 22);                                     // roof edge
+    c.fillStyle = "#0a0d10"; c.fillRect(70, 26, 140, 22);                                   // destination sign
+    c.font = "bold 15px monospace"; c.textAlign = "center"; c.fillStyle = "#e08a2a"; c.fillText("T-CENTRALEN", 140, 42); e.font = c.font; e.textAlign = "center"; e.fillStyle = "#d07a20"; e.fillText("T-CENTRALEN", 140, 42);
+    // three-part front: left window, door with a window, right window
+    c.fillStyle = "#0e1a28"; c.fillRect(14, 56, 96, 74); c.fillRect(170, 56, 96, 74); c.fillRect(116, 56, 48, 150);
+    c.fillStyle = "#16212c"; c.fillRect(20, 62, 84, 62); c.fillRect(176, 62, 84, 62); c.fillRect(121, 62, 38, 64);
+    c.fillStyle = "#dfe3e4"; c.fillRect(0, 140, 114, 10); c.fillRect(166, 140, W - 166, 10);   // stripe
+    c.fillStyle = "#e9eef0"; c.beginPath(); c.arc(140, 168, 13, 0, 6.28); c.fill(); c.fillStyle = "#1b4a90"; c.font = "bold 13px Arial"; c.fillText("SL", 140, 173);
+    // headlights and tail lights
+    [[40, 196], [240, 196]].forEach(function (p, i) { c.fillStyle = "#111"; c.beginPath(); c.arc(p[0], p[1], 14, 0, 6.28); c.fill(); c.fillStyle = i === 0 && o.broken ? "#2a2a2a" : "#dfe6ea"; c.beginPath(); c.arc(p[0], p[1], 10, 0, 6.28); c.fill(); if (!(i === 0 && o.broken)) { e.fillStyle = "#fff"; e.beginPath(); e.arc(p[0], p[1], 10, 0, 6.28); e.fill(); } });
+    [[70, 200], [210, 200]].forEach(function (p) { c.fillStyle = "#4a0a08"; c.fillRect(p[0] - 8, p[1] - 5, 16, 10); });
+    c.fillStyle = "#101a28"; c.fillRect(0, H - 22, W, 22);
+    if (o.broken) {
+      // the left windscreen smashed through, the right one cracked, soot and dents
+      c.fillStyle = "#020202"; c.fillRect(20, 62, 84, 62);
+      c.fillStyle = "rgba(170,190,200,0.6)"; for (var j = 0; j < 8; j++) { var sx = 20 + Math.random() * 84; c.beginPath(); c.moveTo(sx - 6, 62); c.lineTo(sx + 6, 62); c.lineTo(sx, 70 + Math.random() * 20); c.fill(); }
+      c.strokeStyle = "rgba(230,240,255,0.8)"; c.lineWidth = 1;
+      for (var a = 0; a < 12; a++) { var an = a / 12 * 6.28, px = 215, py = 90; c.beginPath(); c.moveTo(px, py); for (var s = 0; s < 4; s++) { px += Math.cos(an + (Math.random() - 0.5) * 0.7) * 11; py += Math.sin(an + (Math.random() - 0.5) * 0.7) * 11; c.lineTo(px, py); } c.stroke(); }
+      for (var i = 0; i < 18; i++) { var dx = Math.random() * W, dy = Math.random() * H, dr = 10 + Math.random() * 35, g3 = c.createRadialGradient(dx, dy, 1, dx, dy, dr); g3.addColorStop(0, "rgba(0,0,0,0.55)"); g3.addColorStop(1, "rgba(0,0,0,0)"); c.fillStyle = g3; c.fillRect(dx - dr, dy - dr, dr * 2, dr * 2); }
+      var sg = c.createLinearGradient(0, H, 0, 0); sg.addColorStop(0, "rgba(8,6,4,0.7)"); sg.addColorStop(0.6, "rgba(8,6,4,0.1)"); sg.addColorStop(1, "rgba(8,6,4,0)"); c.fillStyle = sg; c.fillRect(0, 0, W, H);
+    }
+    var t1 = new THREE.CanvasTexture(c1), t2b = new THREE.CanvasTexture(c2); t1.encoding = t2b.encoding = THREE.sRGBEncoding;
+    texKeep.push(t1, t2b);
+    return { map: t1, em: t2b };
+  }
+  var cxPaint = new THREE.MeshStandardMaterial({ color: 0x27609f, metalness: 0.35, roughness: 0.62 });
+  var cxRoof = new THREE.MeshStandardMaterial({ color: 0x474d51, metalness: 0.5, roughness: 0.7 });
+  var cxIron = new THREE.MeshStandardMaterial({ color: 0x1a1c1e, metalness: 0.6, roughness: 0.65 });
+  var cxWheel = new THREE.MeshStandardMaterial({ color: 0x3a3632, metalness: 0.8, roughness: 0.45 });
+  var cxGlass = new THREE.MeshStandardMaterial({ color: 0xbfd6e2, metalness: 0.2, roughness: 0.05, transparent: true, opacity: 0.55, side: THREE.DoubleSide });
+  // a Cx car along +x, centred on the origin, rail top at y = 0.14. Returns the group and its side material (for flicker).
+  function makeCx(len, o) {
+    var g = new THREE.Group(), hw = 1.4;
+    var sh = new THREE.Shape();
+    sh.moveTo(-1.33, 0.95); sh.lineTo(1.33, 0.95); sh.lineTo(1.4, 1.25); sh.lineTo(1.4, 2.95);
+    sh.quadraticCurveTo(1.4, 3.45, 0.95, 3.48); sh.lineTo(-0.95, 3.48); sh.quadraticCurveTo(-1.4, 3.45, -1.4, 2.95); sh.lineTo(-1.4, 1.25); sh.lineTo(-1.33, 0.95);
+    var bodyG = new THREE.ExtrudeGeometry(sh, { depth: len, bevelEnabled: false, curveSegments: 6 });
+    bodyG.translate(0, 0, -len / 2); bodyG.rotateY(Math.PI / 2);
+    g.add(new THREE.Mesh(bodyG, cxPaint));
+    var roof = new THREE.Mesh(new THREE.BoxGeometry(len, 0.04, 1.85), cxRoof); roof.position.y = 3.485; g.add(roof);
+    var side = cxSideTex(len, o);
+    var sideM = new THREE.MeshStandardMaterial({ map: side.map, emissive: 0xffffff, emissiveMap: side.em, emissiveIntensity: 0.35, roughness: 0.55, metalness: 0.25 });
+    [1, -1].forEach(function (sd) { var p = new THREE.Mesh(new THREE.PlaneGeometry(len, 2.15), sideM); p.position.set(0, 0.95 + 1.075 + 0.02, sd * (hw + 0.012)); if (sd < 0) p.rotation.y = Math.PI; g.add(p); });
+    var front = cxFrontTex(o), frontM = new THREE.MeshStandardMaterial({ map: front.map, emissive: 0xffffff, emissiveMap: front.em, emissiveIntensity: 0.5, roughness: 0.5, metalness: 0.25 });
+    var fr = new THREE.Mesh(new THREE.PlaneGeometry(2.8, 2.55), frontM); fr.position.set(len / 2 + 0.012, 0.95 + 1.275, 0); fr.rotation.y = Math.PI / 2; g.add(fr);
+    var bk = new THREE.Mesh(new THREE.PlaneGeometry(2.8, 2.55), frontM); bk.position.set(-len / 2 - 0.012, 0.95 + 1.275, 0); bk.rotation.y = -Math.PI / 2; g.add(bk);
+    // underframe, equipment boxes, coupler
+    var uf = new THREE.Mesh(new THREE.BoxGeometry(len - 0.4, 0.22, 2.3), cxIron); uf.position.y = 0.86; g.add(uf);
+    for (var eb = -len / 2 + 2.6; eb < len / 2 - 2.6; eb += 1.6) { var bx = new THREE.Mesh(new THREE.BoxGeometry(1.1, 0.42, 1.6), cxIron); bx.position.set(eb, 0.56, (eb * 7 % 2 > 1 ? 0.15 : -0.15)); g.add(bx); }
+    var cp = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.18, 0.24), cxIron); cp.position.set(len / 2 + 0.25, 0.78, 0); g.add(cp);
+    // two bogies, four wheels each
+    var wheelG = new THREE.CylinderGeometry(0.38, 0.38, 0.12, 18); wheelG.rotateX(Math.PI / 2);
+    [-len * 0.33, len * 0.33].forEach(function (bxp) {
+      var fr2 = new THREE.Mesh(new THREE.BoxGeometry(2.4, 0.26, 1.95), cxIron); fr2.position.set(bxp, 0.6, 0); g.add(fr2);
+      [-0.8, 0.8].forEach(function (ax) { [-0.72, 0.72].forEach(function (zz) { var wh = new THREE.Mesh(wheelG, cxWheel); wh.position.set(bxp + ax, 0.52, zz); g.add(wh); }); });
+    });
+    // headlight lenses: one dead if broken, the other a dying flicker
+    var hlM = new THREE.MeshBasicMaterial({ color: 0xdfeaff }), hlDead = new THREE.MeshBasicMaterial({ color: 0x1a1a1a });
+    [-1.0, 1.0].forEach(function (zz, i) { var l = new THREE.Mesh(new THREE.CircleGeometry(0.1, 14), o.broken && i === 0 ? hlDead : hlM); l.position.set(len / 2 + 0.03, 0.95 + 0.6, zz); l.rotation.y = Math.PI / 2; g.add(l); if (!(o.broken && i === 0)) wreckFx.push({ type: "lamp", m: l, base: 0xdfeaff, k: o.broken ? 1 : 0.2 }); });
+    wreckFx.push({ type: "interior", mat: sideM, k: o.broken ? 1 : 0.4 });
+    return { g: g, sideM: sideM };
+  }
+  function addSmoke(parent, x, y, z, n) {
+    for (var i = 0; i < n; i++) {
+      var sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: fogTex(), color: 0x6c7276, transparent: true, opacity: 0, depthWrite: false }));
+      sp.position.set(x, y, z); parent.add(sp);
+      wreckFx.push({ type: "smoke", s: sp, x: x, y: y, z: z, t: Math.random() * 4, life: 3.5 + Math.random() * 2 });
+    }
+  }
+  function addSparks(parent, x, y, z) {
+    var mat = new THREE.SpriteMaterial({ map: whiteGlowTex(), color: 0xffc070, blending: THREE.AdditiveBlending, depthWrite: false, transparent: true, opacity: 0 });
+    var list = []; for (var i = 0; i < 14; i++) { var sp = new THREE.Sprite(mat.clone()); sp.scale.set(0.06, 0.06, 1); sp.position.set(x, y, z); parent.add(sp); list.push({ s: sp, vx: 0, vy: 0, vz: 0, life: 0 }); }
+    var glow = new THREE.Sprite(new THREE.SpriteMaterial({ map: whiteGlowTex(), color: 0xffb060, blending: THREE.AdditiveBlending, depthWrite: false, transparent: true, opacity: 0 })); glow.scale.set(1.2, 1.2, 1); glow.position.set(x, y, z); parent.add(glow);
+    wreckFx.push({ type: "sparks", list: list, x: x, y: y, z: z, next: 0.5, glow: glow });
+  }
+  function animWreck(dt) {
+    for (var i = 0; i < wreckFx.length; i++) {
+      var f = wreckFx[i];
+      if (f.type === "smoke") {
+        f.t += dt; var u = (f.t % f.life) / f.life;
+        f.s.position.set(f.x + Math.sin(f.t * 0.7 + i) * 0.3 * u, f.y + u * 2.6, f.z + u * 0.6);
+        var sc = 0.6 + u * 2.2; f.s.scale.set(sc, sc, 1); f.s.material.opacity = 0.32 * Math.sin(u * Math.PI);
+      } else if (f.type === "sparks") {
+        f.next -= dt;
+        if (f.next <= 0) { f.next = 0.4 + Math.random() * 2.2; f.flash = 0.12; f.list.forEach(function (p) { p.life = 0.3 + Math.random() * 0.6; p.s.position.set(f.x, f.y, f.z); p.vx = (Math.random() - 0.5) * 2.5; p.vy = Math.random() * 1.5; p.vz = (Math.random() - 0.5) * 2.5; }); }
+        f.flash = Math.max(0, (f.flash || 0) - dt); f.glow.material.opacity = f.flash > 0 ? 0.6 * Math.random() + 0.3 : 0;
+        f.list.forEach(function (p) { if (p.life <= 0) { p.s.material.opacity = 0; return; } p.life -= dt; p.vy -= 6 * dt; p.s.position.x += p.vx * dt; p.s.position.y = Math.max(0.05, p.s.position.y + p.vy * dt); p.s.position.z += p.vz * dt; p.s.material.opacity = Math.min(1, p.life * 3); });
+      } else if (f.type === "interior") {
+        var on = Math.random() < 0.94 ? 1 : 0.1; f.mat.emissiveIntensity = (0.12 + 0.2 * tubeFlick) * on * f.k + 0.04;
+      } else if (f.type === "lamp") {
+        var v = Math.random() < 0.9 ? 0.5 + 0.5 * tubeFlick : 0.05; f.m.material.color.setHex(f.base).multiplyScalar(v * f.k + (1 - f.k) * 0.3);
+      }
+    }
+  }
+
   function addStartPlatform() {
     var cyy = Math.floor(gh / 2), zc = (cyy + 0.5) * CELL, zA = (cyy - 2) * CELL, zB = (cyy + 3) * CELL, L = zB - zA, g = new THREE.Group(), z;
     var tx = 4.5;
@@ -1414,15 +1572,38 @@ Look at it to freeze it. Back away to win some distance.</p>
     big.position.set(3.03, 1.75, zc); big.rotation.y = Math.PI / 2; g.add(big);
     var pt2 = hangSignTexture("Kymlinge"); texKeep.push(pt2);
     var hgM = new THREE.MeshStandardMaterial({ map: pt2, transparent: true, alphaTest: 0.05, roughness: 0.45, emissive: 0xffffff, emissiveMap: pt2, emissiveIntensity: 0.25 });
-    [[0.012, Math.PI / 2], [-0.012, -Math.PI / 2]].forEach(function (f) {
-      var hang = new THREE.Mesh(new THREE.PlaneGeometry(3.8, 1.1875), hgM);
-      hang.position.set(5.2 + f[0], 2.5, zc); hang.rotation.y = f[1]; g.add(hang);
-    });
+    var fallen = new THREE.Mesh(new THREE.PlaneGeometry(3.8, 1.1875), hgM.clone()); fallen.material.side = THREE.DoubleSide;
+    fallen.position.set(7.9, 0.06, zc + 3.4); fallen.rotation.set(-Math.PI / 2 + 0.08, 0, 0.55); g.add(fallen);      // torn down by the crash
     var poleW = new THREE.MeshStandardMaterial({ color: 0xe9e9e2, roughness: 0.5 });
-    [-1.72, 1.72].forEach(function (o) {
-      var pole = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.035, 1.0, 8), poleW); pole.position.set(5.2, 2.7, zc + o); g.add(pole);
-      addBox(g, new THREE.MeshStandardMaterial({ color: 0x22377e, roughness: 0.6 }), 0.08, 0.12, 0.12, 5.2, 2.02, zc + o);
-    });
+    var bentPole = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.035, 1.0, 8), poleW); bentPole.position.set(7.1, 0.08, zc + 2.6); bentPole.rotation.set(0.3, 0, Math.PI / 2); g.add(bentPole);
+    // The car you were in: derailed, nose crushed into the end of the station, leaning over the platform edge.
+    var car = makeCx(12.5, { broken: true, soot: true, missingDoor: 1 }), carO = new THREE.Group();
+    car.g.rotation.set(-0.16, 0, -0.035); car.g.position.y = 0.08;
+    carO.add(car.g); carO.position.set(4.55, 0, zc + 1.0); carO.rotation.y = -Math.PI / 2 + 0.05; g.add(carO);
+    var noseZ = zc + 1.0 + 6.25;
+    // its torn-out door on the platform, glass everywhere, rubble where the nose hit
+    var doorM = new THREE.MeshStandardMaterial({ color: 0x6e3414, roughness: 0.7, metalness: 0.2 });
+    var td = addBox(g, doorM, 1.25, 0.06, 1.95, 7.0, 0.07, zc + 1.4); td.rotation.set(0.05, 0.4, 0.06);
+    var tdw = new THREE.Mesh(new THREE.PlaneGeometry(0.4, 0.7), cxGlass); tdw.rotation.x = -Math.PI / 2; tdw.position.set(7.0, 0.105, zc + 1.0); g.add(tdw);
+    (function () {
+      var shardG = new THREE.BufferGeometry(); shardG.setAttribute("position", new THREE.Float32BufferAttribute([0, 0, 0, 1, 0, 0.2, 0.3, 0, 1], 3)); shardG.computeVertexNormals();
+      var n = 140, im = new THREE.InstancedMesh(shardG, cxGlass, n), m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), e3 = new THREE.Euler(), v = new THREE.Vector3(), sc = new THREE.Vector3();
+      for (var i = 0; i < n; i++) {
+        var r = Math.pow(Math.random(), 1.6) * 3.2, a = Math.random() * 6.28;
+        v.set(Math.min(9.2, 6.2 + Math.abs(Math.cos(a)) * r), 0.012 + Math.random() * 0.01, zc + 1.0 + Math.sin(a) * r * 1.6);
+        e3.set(Math.random() * 0.2, Math.random() * 6.28, Math.random() * 0.2); q.setFromEuler(e3); var k2 = 0.03 + Math.random() * 0.09; sc.set(k2, 1, k2);
+        im.setMatrixAt(i, m4.compose(v, q, sc));
+      }
+      g.add(im);
+      for (var j = 0; j < 16; j++) { var rb = addBox(g, wallMat, 0.2 + Math.random() * 0.5, 0.12 + Math.random() * 0.35, 0.2 + Math.random() * 0.5, 3.6 + Math.random() * 2.4, 0.12, zB - 0.3 - Math.random() * 1.6); rb.rotation.set(Math.random(), Math.random() * 3, Math.random()); }
+      for (var k3 = 0; k3 < 7; k3++) { var pl = addBox(g, cxPaint, 0.5 + Math.random() * 0.9, 0.02, 0.3 + Math.random() * 0.5, 5.4 + Math.random() * 1.6, 0.03, noseZ - 1 - Math.random() * 3); pl.rotation.set((Math.random() - 0.5) * 0.4, Math.random() * 3, (Math.random() - 0.5) * 0.4); }
+    })();
+    // a severed cable hanging from the ceiling, spitting sparks; smoke from the crushed nose
+    var cable = new THREE.Mesh(new THREE.CylinderGeometry(0.015, 0.015, 1.2, 6), cxIron); cable.position.set(5.9, 2.75, noseZ - 1.8); cable.rotation.z = 0.25; g.add(cable);
+    addSparks(g, 6.05, 2.18, noseZ - 1.8);
+    addSmoke(g, 4.9, 1.6, noseZ - 0.6, 8);
+    lightSrc.push({ x: 5.4, y: 2.2, z: noseZ - 1.5, c: 0xffb070, k: 1.2, dist: 9, tube: true });
+    blockers.push({ x0: 3.0, x1: 6.35, z0: zc - 6, z1: zc + 3 }, { x0: 3.0, x1: 6.7, z0: zc + 3, z1: zB });
     // the bench you wake on, facing the track
     var bx = 7.4;
     var benchG = new THREE.Group();
@@ -1444,26 +1625,12 @@ Look at it to freeze it. Back away to win some distance.</p>
     for (x = X0 + 0.4; x < X1; x += 0.72) addBox(g, sleeperMat, 0.22, 0.09, 2.5, x, 0.06, zc);
     [-0.72, 0.72].forEach(function (o) { addBox(g, railMat, L, 0.09, 0.07, X0 + L / 2, 0.14, zc + o); });
     [-1, 1].forEach(function (sd) { addBox(g, edgeMat, L, 0.012, 0.18, X0 + L / 2, 0.02, zc + sd * (CELL / 2 - 0.12)); });
-    // the train, parked: silver, silent, windows dark
+    // the rear cars of the same train: an old Cx, derailed and leaning, windows broken, one headlight dying
     var tx0 = (h.xa + 2) * CELL, tx1 = (h.xb - 1) * CELL, tl = tx1 - tx0, tc = (tx0 + tx1) / 2;
-    addBox(g, trainBlue, tl, 2.75, 2.6, tc, 1.62, zc);
-    addBox(g, trainDark, tl + 0.02, 0.35, 2.64, tc, 0.28, zc);
-    addBox(g, trainDark, tl + 0.02, 0.12, 2.64, tc, 3.02, zc);
-    var sideT = trainSideTextures(tl), frontT = trainFrontTexture();
-    var sideM = new THREE.MeshStandardMaterial({ map: sideT.map, emissive: 0xffffff, emissiveMap: sideT.em, emissiveIntensity: 0.35, roughness: 0.45, metalness: 0.2 });
-    var frontM = new THREE.MeshStandardMaterial({ map: frontT.map, emissive: 0xffffff, emissiveMap: frontT.em, emissiveIntensity: 0.3, roughness: 0.45, metalness: 0.2 });
-    texKeep.push(sideT.map, sideT.em, frontT.map, frontT.em);
-    [[1, 0], [-1, Math.PI]].forEach(function (sd) {
-      var sp = new THREE.Mesh(new THREE.PlaneGeometry(tl, 2.75), sideM); sp.position.set(tc, 1.62, zc + sd[0] * 1.312); sp.rotation.y = sd[1]; sp.userData.train = true; g.add(sp);
-    });
-    [[tx0 - 0.02, -1], [tx1 + 0.02, 1]].forEach(function (e) {
-      var fp = new THREE.Mesh(new THREE.PlaneGeometry(2.6, 2.75), frontM); fp.position.set(e[0] + e[1] * 0.012, 1.62, zc); fp.rotation.y = e[1] * Math.PI / 2; fp.userData.train = true; g.add(fp);
-      [-0.8, 0.8].forEach(function (o) {
-        var hl = new THREE.Mesh(boxGeo, new THREE.MeshBasicMaterial({ color: 0xdfeaff })); hl.scale.set(0.05, 0.14, 0.3); hl.position.set(e[0] + e[1] * 0.02, 0.85, zc + o); g.add(hl);
-      });
-      var gl = new THREE.Sprite(tubeGlowMat); gl.scale.set(3.2, 1.6, 1); gl.position.set(e[0] + e[1] * 0.4, 0.9, zc); g.add(gl);
-      lightSrc.push({ x: e[0] + e[1] * 1.6, y: 1.2, z: zc, c: 0xdfeaff, k: 1.1, dist: 9 });
-    });
+    var rear = makeCx(tl, { broken: true, soot: false, missingDoor: -1 });
+    rear.g.rotation.set(0.07, 0.025, 0.012); rear.g.position.set(tc, 0.03, zc); rear.g.traverse(function (o) { if (o.isMesh) o.userData.train = true; }); g.add(rear.g);
+    lightSrc.push({ x: tx1 + 1.4, y: 1.2, z: zc, c: 0xdfeaff, k: 0.6, dist: 7, tube: true });
+    addSmoke(g, tx1 - 0.5, 2.2, zc, 4);
     // tunnel mouths at both ends of the track
     [[X0 + 0.02, 1], [X1 - 0.02, -1]].forEach(function (e) {
       var tm = new THREE.Mesh(new THREE.PlaneGeometry(CELL * 0.92, 2.7), tunnelMat); tm.position.set(e[0], 1.35, zc); tm.rotation.y = e[1] > 0 ? Math.PI / 2 : -Math.PI / 2; g.add(tm);
@@ -1945,7 +2112,7 @@ Look at it to freeze it. Back away to win some distance.</p>
     for (z = Math.max(1, cy - 2); z <= Math.min(gh - 2, cy + 2); z++) for (x = 1; x <= 5; x++) grid[z][x] = 0;
     grid[cy - 1][3] = 1; grid[cy + 1][3] = 1;
     // The railway hall: three cell rows opened up (platform, track, platform) with a parked train in the middle of the track row.
-    railHall = null; trainSet = {}; blockers = [];
+    railHall = null; trainSet = {}; blockers = []; wreckFx = [];
     (function () {
       var xa = 7, xb = Math.min(gw - 2, xa + 8);
       if (xb - xa < 6 || gh < 7) return;
@@ -2890,7 +3057,7 @@ Look at it to freeze it. Back away to win some distance.</p>
     camera.far = 60; camera.updateProjectionMatrix();
     removeBench();
     // you come to on the platform floor by the track, eyes opening; then you stand up
-    if (startBench) { px = startBench.x - 0.8; pz = startBench.z; }
+    if (startBench) { px = startBench.x + 0.1; pz = startBench.z - 0.6; }
     yaw = Math.PI / 2; pitch = 0.05; camY = -1.25;
     wake.t = 0; wake.floor = true; lid = 1; ignoreUntilRelease = true;
     setFade(1, "#000"); fadeTarget = 0; fadeSpeed = 0.9;
@@ -3663,7 +3830,7 @@ Look at it to freeze it. Back away to win some distance.</p>
     for (var hi = 0; hi < hunted.length; hi++) if (hunted[hi].rig) animAura(hunted[hi].rig.aura, t + hi * 3.7, 1);
     if (cityMode && (state === "end" || state === "choice")) cityStep(dt); else if (state === "exiting") exitStep(dt);
     fadeTick(dt); if (exitGlow) exitGlow.material.opacity = state === "exiting" ? exitGlow.material.opacity : 0.55 + 0.1 * Math.sin(t * 2);
-    animItems(dt); mapTick(dt);
+    animItems(dt); mapTick(dt); animWreck(dt);
     animAxe(dt); animHunted(dt); scareTick(dt); breathTick(dt); mistTick(t);
   }
   function draw() {
