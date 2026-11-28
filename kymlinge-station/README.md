@@ -22,6 +22,6 @@ Add `?demo` to the URL to watch an autopilot play a run.
 
 ## Opening: the night train
 
-The first run starts on the last metro of the night: you wake up holding a pole, with passengers around you and Stockholm (Riddarholmen and the City Hall tower) outside the windows. The train enters the tunnel, the lights flicker, the car is suddenly empty, and the doors open at Kymlinge. **Space** skips it. If the models have not loaded yet, the run starts on the bench instead.
+The first run starts as an ordinary ride: you step onto an empty, grey night train at Slussen, the doors close and it heads for T-Centralen, Stockholm (Riddarholmen and the City Hall tower) outside. Then a jolt: strange walls appear outside and the car starts to rock ("What's going on?!", "Ahhh! What's happening?!"). The train crashes, you are thrown out, and you come to on the floor of Kymlinge next to the wrecked car ("What... happened...", "Where am I?"). **Space** skips the ride. If the backdrop has not loaded yet, the run starts on the bench instead.
 
-People and the arm come from the Microsoft Rocketbox Avatar Library (MIT); the Stockholm photo is by John Samuel (CC BY-SA 4.0). Details in `models/metro/CREDITS.md`.
+The Stockholm photo is by John Samuel (CC BY-SA 4.0); the voice was made with ElevenLabs. Details in `models/metro/CREDITS.md`.
