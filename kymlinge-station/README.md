@@ -19,3 +19,9 @@ Add `?demo` to the URL to watch an autopilot play a run.
 - Escape at sunrise, then walk away into Stockholm or go back in with an iron axe to destroy it for +100.
 - Modes: Easy (smaller maze, fewer false alarms, 4 hits on the ghost) and Medium. High scores and ranks are saved per mode in the browser.
 - Full screen with the button or **F**.
+
+## Opening: the night train
+
+The first run starts on the last metro of the night: you wake up holding a pole, with passengers around you and Stockholm (Riddarholmen and the City Hall tower) outside the windows. The train enters the tunnel, the lights flicker, the car is suddenly empty, and the doors open at Kymlinge. **Space** skips it. If the models have not loaded yet, the run starts on the bench instead.
+
+People and the arm come from the Microsoft Rocketbox Avatar Library (MIT); the Stockholm photo is by John Samuel (CC BY-SA 4.0). Details in `models/metro/CREDITS.md`.
